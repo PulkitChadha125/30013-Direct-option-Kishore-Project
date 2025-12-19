@@ -1,0 +1,2 @@
+[2025-12-14 22:11:45] STARTUP: settings loaded and authentication complete
+[2025-12-14 22:11:54] NIFTY_10: Trading stopped at StopTime 15:14:00, all positions closed.
