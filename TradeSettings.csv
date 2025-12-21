@@ -1,2 +1,3 @@
 Symbol,Timeframe,EntryLots,SL1Points,Sl2Points,Sl3Points,Sl4Points,Tgt1Lots,Tgt2Lots,Tgt3Lots,Tgt4Lots,T2Percent,T3Percent,T4Percent,StartTime,StopTime,ProductType
 NIFTY25DECFUT,1,4,50,50,50,50,50,50,50,50,1,1,1,9:25,15:15,positional
+BANKNIFTY25DECFUT,1,4,50,50,50,50,50,50,50,50,1,1,1,22:10,23:15,intraday

@@ -1,1 +1,9 @@
-[SIGNAL] NSE:NIFTY25DECFUT - SCH: 26035.90, SCL: 26030.30, Entry: 26078.03
+
+================================================================================
+[STARTUP] Strategy initialized at 2025-12-21 22:25:37.068589
+[STARTUP] Loaded 2 symbol(s) from TradeSettings.csv
+  - NIFTY25DECFUT (ProductType: positional, Timeframe: 1 min, StartTime: 9:25, StopTime: 15:15)
+  - BANKNIFTY25DECFUT (ProductType: intraday, Timeframe: 1 min, StartTime: 22:10, StopTime: 23:15)
+================================================================================
+
+[STATE] Loading state from today: 2025-12-21

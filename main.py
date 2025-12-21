@@ -81,12 +81,23 @@ def load_state():
     """Load state from state.json file - returns positions even if from different day"""
     try:
         with open('state.json', 'r') as f:
-            state = json.load(f)
+            content = f.read().strip()
+            # Check if file is empty
+            if not content:
+                print("[STATE] state.json is empty - starting fresh")
+                return {}, None
+            state = json.loads(content)
             return state.get('positions', {}), state.get('date')
     except FileNotFoundError:
+        print("[STATE] state.json not found - starting fresh")
+        return {}, None
+    except json.JSONDecodeError as e:
+        print(f"[STATE] Error parsing state.json (invalid JSON): {e}")
+        print("[STATE] Starting fresh - consider backing up or fixing state.json if needed")
         return {}, None
     except Exception as e:
-        print(f"Error loading state: {e}")
+        print(f"[STATE] Error loading state: {e}")
+        print("[STATE] Starting fresh")
         return {}, None
 
 def save_state(positions_state):
@@ -166,34 +177,45 @@ def check_signal_candle(df):
         }
         return True, signal_candle
     
-    # First candle is red - check for green candle pattern
-    # We need at least 3 candles total (including today's first red candle)
-    if len(df) < 3:
+    # First candle is red - check for green candle pattern in previous TWO bars only
+    # We need to find the candle immediately before today's first candle
+    # Sort dataframe by date to ensure chronological order
+    df_sorted = df.sort_values('date').copy()
+    df_sorted = df_sorted.reset_index(drop=True)
+    
+    # Find the position/index of today's first candle in the sorted dataframe
+    # Get the timestamp of today's first candle
+    first_candle_timestamp = pd.to_datetime(first_candle_today['date'])
+    
+    # Find all rows with date less than today's first candle
+    before_today = df_sorted[pd.to_datetime(df_sorted['date']) < first_candle_timestamp]
+    
+    # We need at least 2 candles before today's first candle
+    if len(before_today) < 2:
         return False, None
     
-    # Get last 3 candles (most recent is last)
-    candle_3 = df.iloc[-3]  # Oldest of the 3
-    candle_2 = df.iloc[-2]  # Middle (the green candle we're checking)
-    candle_1 = df.iloc[-1]  # Most recent
+    # Get the last 2 candles before today (previous two bars)
+    prev_candle = before_today.iloc[-1]  # Previous candle (the green one we're checking)
+    prev_to_prev_candle = before_today.iloc[-2]  # Previous to previous candle
     
-    # Check if candle_2 is green (close > open)
-    is_green = candle_2['close'] > candle_2['open']
+    # Check if previous candle is green (close > open)
+    is_prev_green = prev_candle['close'] > prev_candle['open']
     
-    if not is_green:
+    if not is_prev_green:
         return False, None
     
     # Check conditions for green candle pattern:
     # Previous candle High < prev to previous candle's High
     # Previous candle Low < prev to previous candle's Low
-    condition1 = candle_2['high'] < candle_3['high']
-    condition2 = candle_2['low'] < candle_3['low']
+    condition1 = prev_candle['high'] < prev_to_prev_candle['high']
+    condition2 = prev_candle['low'] < prev_to_prev_candle['low']
     
     if condition1 and condition2:
         signal_candle = {
-            'high': float(candle_2['high']),
-            'low': float(candle_2['low']),
-            'open': float(candle_2['open']),
-            'close': float(candle_2['close'])
+            'high': float(prev_candle['high']),
+            'low': float(prev_candle['low']),
+            'open': float(prev_candle['open']),
+            'close': float(prev_candle['close'])
         }
         return True, signal_candle
     
@@ -281,7 +303,7 @@ def place_sell_order(symbol, quantity, price, product_type="INTRADAY"):
 
 def print_trading_status(unique_key, params, positions_state):
     """
-    Print comprehensive trading status for a symbol in a presentable format
+    Print compact trading status for a symbol
     """
     try:
         symbol = params.get('Symbol', 'N/A')
@@ -305,196 +327,61 @@ def print_trading_status(unique_key, params, positions_state):
             status = "NO SIGNAL"
             status_color = "⚪"
         
-        current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print("\n" + "="*80)
-        print(f"{status_color} TRADING STATUS: {symbol} | LTP: {ltp_str} | Status: {status}")
-        print(f"   Time: {current_timestamp}")
-        print("="*80)
+        current_timestamp = datetime.now().strftime("%H:%M:%S")
+        print(f"\n{status_color} {symbol} | LTP: {ltp_str} | {status} | {current_timestamp}")
         
         # Signal Candle Information
         if pos_state.get('signal_detected'):
             sch = pos_state.get('SCH', 0)
             scl = pos_state.get('SCL', 0)
-            signal_time = pos_state.get('signal_time', 'N/A')
-            if isinstance(signal_time, str) and 'T' in signal_time:
-                signal_time = signal_time.split('T')[1].split('.')[0]
-            
-            print(f"\n📊 SIGNAL CANDLE:")
-            print(f"   SCH (Signal Candle High): {sch:.2f}")
-            print(f"   SCL (Signal Candle Low):  {scl:.2f}")
-            print(f"   Signal Detected At:       {signal_time}")
+            print(f"   SCH: {sch:.2f} | SCL: {scl:.2f} | Entry: {pos_state.get('Entry', 0):.2f}")
         
         # Entry Information
         entry_price = pos_state.get('Entry', 0)
-        entry_lots = params.get('EntryLots', 0)
         entry_taken = pos_state.get('entry_taken', False)
         actual_entry_price = pos_state.get('entry_price', entry_price)
-        entry_time = pos_state.get('entry_time', 'N/A')
-        if isinstance(entry_time, str) and 'T' in entry_time:
-            entry_time = entry_time.split('T')[1].split('.')[0]
         
-        print(f"\n🎯 ENTRY:")
-        if entry_taken:
-            print(f"   Entry Price:              {actual_entry_price:.2f} ✅ ENTERED")
-            print(f"   Entry Time:               {entry_time}")
-            print(f"   Entry Lots:               {entry_lots}")
-        else:
-            print(f"   Entry Trigger:             {entry_price:.2f} ⏳ WAITING")
-            print(f"   Entry Lots:                {entry_lots}")
-            if ltp:
-                diff = entry_price - ltp
-                pct_diff = (diff / ltp * 100) if ltp > 0 else 0
-                print(f"   Distance to Entry:        {diff:.2f} points ({pct_diff:+.2f}%)")
-        
-        # Stop Loss Information
-        initial_sl = pos_state.get('InitialSL', 0)
-        print(f"\n🛑 STOP LOSS LEVELS:")
-        if initial_sl > 0:
-            print(f"   Initial SL:                {initial_sl:.2f}")
-            if entry_taken and ltp:
-                sl_diff = ltp - initial_sl
-                sl_pct = (sl_diff / ltp * 100) if ltp > 0 else 0
-                print(f"   SL Distance:               {sl_diff:.2f} points ({sl_pct:.2f}%)")
-        
-        # Target and SL Information
-        t1 = pos_state.get('T1', 0)
-        t2 = pos_state.get('T2', 0)
-        t3 = pos_state.get('T3', 0)
-        t4 = pos_state.get('T4', 0)
-        sl1 = pos_state.get('SL1', 0)
-        sl2 = pos_state.get('SL2', 0)
-        sl3 = pos_state.get('SL3', 0)
-        sl4 = pos_state.get('SL4', 0)
-        
-        tgt1_lots = params.get('Tgt1Lots', 0)
-        tgt2_lots = params.get('Tgt2Lots', 0)
-        tgt3_lots = params.get('Tgt3Lots', 0)
-        tgt4_lots = params.get('Tgt4Lots', 0)
-        
-        t1_hit = pos_state.get('t1_hit', False)
-        t2_hit = pos_state.get('t2_hit', False)
-        t3_hit = pos_state.get('t3_hit', False)
-        t4_hit = pos_state.get('t4_hit', False)
-        
-        print(f"\n🎯 TARGETS & STOP LOSSES:")
-        print(f"   {'Target':<12} {'Price':<12} {'SL Below':<12} {'Exit Lots':<12} {'Status':<12}")
-        print(f"   {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*12}")
-        
-        if t1 > 0:
-            t1_status = "✅ HIT" if t1_hit else ("🟢 ACTIVE" if entry_taken else "⏳ PENDING")
-            if ltp and entry_taken:
-                t1_diff = t1 - ltp
-                t1_pct = (t1_diff / ltp * 100) if ltp > 0 else 0
-                t1_info = f"{t1_diff:+.2f} ({t1_pct:+.2f}%)"
-            else:
-                t1_info = "-"
-            print(f"   T1{'':<9} {t1:<12.2f} {sl1:<12.2f} {tgt1_lots:<12} {t1_status:<12} {t1_info}")
-        
-        if t2 > 0:
-            t2_status = "✅ HIT" if t2_hit else ("🟢 ACTIVE" if t1_hit else "⏳ PENDING")
-            if ltp and entry_taken and t1_hit:
-                t2_diff = t2 - ltp
-                t2_pct = (t2_diff / ltp * 100) if ltp > 0 else 0
-                t2_info = f"{t2_diff:+.2f} ({t2_pct:+.2f}%)"
-            else:
-                t2_info = "-"
-            print(f"   T2{'':<9} {t2:<12.2f} {sl2:<12.2f} {tgt2_lots:<12} {t2_status:<12} {t2_info}")
-        
-        if t3 > 0:
-            t3_status = "✅ HIT" if t3_hit else ("🟢 ACTIVE" if t2_hit else "⏳ PENDING")
-            if ltp and entry_taken and t2_hit:
-                t3_diff = t3 - ltp
-                t3_pct = (t3_diff / ltp * 100) if ltp > 0 else 0
-                t3_info = f"{t3_diff:+.2f} ({t3_pct:+.2f}%)"
-            else:
-                t3_info = "-"
-            print(f"   T3{'':<9} {t3:<12.2f} {sl3:<12.2f} {tgt3_lots:<12} {t3_status:<12} {t3_info}")
-        
-        if t4 > 0:
-            t4_status = "✅ HIT" if t4_hit else ("🟢 ACTIVE" if t3_hit else "⏳ PENDING")
-            if ltp and entry_taken and t3_hit:
-                t4_diff = t4 - ltp
-                t4_pct = (t4_diff / ltp * 100) if ltp > 0 else 0
-                t4_info = f"{t4_diff:+.2f} ({t4_pct:+.2f}%)"
-            else:
-                t4_info = "-"
-            print(f"   T4{'':<9} {t4:<12.2f} {sl4:<12.2f} {tgt4_lots:<12} {t4_status:<12} {t4_info}")
-        
-        # Position Summary
         if entry_taken:
             remaining_lots = pos_state.get('remaining_lots', 0)
-            pnl = 0
-            if ltp and actual_entry_price:
-                pnl = (ltp - actual_entry_price) * remaining_lots
-                pnl_pct = ((ltp - actual_entry_price) / actual_entry_price * 100) if actual_entry_price > 0 else 0
-            
-            print(f"\n💰 POSITION SUMMARY:")
-            print(f"   Remaining Lots:            {remaining_lots}")
-            if ltp and actual_entry_price:
-                print(f"   Unrealized P&L:            {pnl:+.2f} ({pnl_pct:+.2f}%)")
+            pnl = (ltp - actual_entry_price) * remaining_lots if ltp and actual_entry_price else 0
+            print(f"   Entry: {actual_entry_price:.2f} ✅ | Lots: {remaining_lots} | P&L: {pnl:+.2f}")
+        elif entry_price > 0:
+            diff = entry_price - ltp if ltp else 0
+            print(f"   Entry: {entry_price:.2f} ⏳ | Distance: {diff:+.2f}")
         
-        # Trading Hours
+        # Targets & SLs (compact)
+        if entry_taken or pos_state.get('signal_detected'):
+            t1 = pos_state.get('T1', 0)
+            t2 = pos_state.get('T2', 0)
+            t3 = pos_state.get('T3', 0)
+            t4 = pos_state.get('T4', 0)
+            t1_hit = pos_state.get('t1_hit', False)
+            t2_hit = pos_state.get('t2_hit', False)
+            t3_hit = pos_state.get('t3_hit', False)
+            t4_hit = pos_state.get('t4_hit', False)
+            
+            targets = []
+            if t1 > 0: targets.append(f"T1:{t1:.0f}{'✅' if t1_hit else ''}")
+            if t2 > 0: targets.append(f"T2:{t2:.0f}{'✅' if t2_hit else ''}")
+            if t3 > 0: targets.append(f"T3:{t3:.0f}{'✅' if t3_hit else ''}")
+            if t4 > 0: targets.append(f"T4:{t4:.0f}{'✅' if t4_hit else ''}")
+            
+            if targets:
+                print(f"   Targets: {' | '.join(targets)}")
+            
+            sl = pos_state.get('InitialSL', 0)
+            if sl > 0:
+                print(f"   SL: {sl:.2f}")
+        
+        # Trading Hours (compact)
         start_time = params.get('StartTime', 'N/A')
         stop_time = params.get('StopTime', 'N/A')
         current_time = datetime.now().time()
         in_trading_hours = is_time_between(start_time, stop_time, current_time) if start_time != 'N/A' else True
-        
-        print(f"\n⏰ TRADING HOURS:")
-        print(f"   Start Time:                {start_time}")
-        print(f"   Stop Time:                 {stop_time}")
-        print(f"   Current Status:            {'🟢 ACTIVE' if in_trading_hours else '🔴 OUT OF HOURS'}")
-        
-        # Next Pattern Check Time
-        next_check_time = pos_state.get('next_check_time')
-        timeframe = params.get('Timeframe', 'N/A')
-        if next_check_time:
-            try:
-                if isinstance(next_check_time, str):
-                    next_check_dt = datetime.fromisoformat(next_check_time)
-                else:
-                    next_check_dt = next_check_time
-                
-                now = datetime.now()
-                time_until_check = next_check_dt - now
-                
-                # Format next check time
-                next_check_str = next_check_dt.strftime("%Y-%m-%d %H:%M:%S")
-                
-                # Calculate time remaining
-                if time_until_check.total_seconds() > 0:
-                    hours = int(time_until_check.total_seconds() // 3600)
-                    minutes = int((time_until_check.total_seconds() % 3600) // 60)
-                    seconds = int(time_until_check.total_seconds() % 60)
-                    
-                    if hours > 0:
-                        time_remaining = f"{hours}h {minutes}m {seconds}s"
-                    elif minutes > 0:
-                        time_remaining = f"{minutes}m {seconds}s"
-                    else:
-                        time_remaining = f"{seconds}s"
-                    
-                    print(f"\n🔄 PATTERN DETECTION:")
-                    print(f"   Timeframe:                {timeframe} minutes")
-                    print(f"   Next Check Time:           {next_check_str}")
-                    print(f"   Time Remaining:           {time_remaining}")
-                else:
-                    print(f"\n🔄 PATTERN DETECTION:")
-                    print(f"   Timeframe:                {timeframe} minutes")
-                    print(f"   Next Check Time:           {next_check_str} (DUE NOW)")
-            except Exception as e:
-                print(f"\n🔄 PATTERN DETECTION:")
-                print(f"   Timeframe:                {timeframe} minutes")
-                print(f"   Next Check Time:           Calculating...")
-        else:
-            print(f"\n🔄 PATTERN DETECTION:")
-            print(f"   Timeframe:                {timeframe} minutes")
-            print(f"   Next Check Time:           Not scheduled yet")
-        
-        print("="*80 + "\n")
+        print(f"   Hours: {start_time}-{stop_time} {'🟢' if in_trading_hours else '🔴'}")
         
     except Exception as e:
-        print(f"Error printing trading status: {e}")
-        traceback.print_exc()
+        print(f"Error printing status: {str(e)}")
 
 def get_user_settings():
     global result_dict, instrument_id_list, Equity_instrument_id_list, Future_instrument_id_list, FyerSymbolList, positions_state
@@ -594,20 +481,29 @@ def check_signal_for_symbol(unique_key, params, positions_state):
             if pos_state.get('signal_detected') or pos_state.get('entry_taken') or pos_state.get('exited_today'):
                 return False
         
-        # Fetch historical data
+        # Fetch historical data (fetched at every check)
+        check_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"\n[{symbol}] Fetching historical data at {check_timestamp}")
         df = fetchOHLC(symbol, timeframe)
         
         if len(df) < 3:
             return False
         
+        # Print last 2 candles OHLC being checked with timestamp
+        last_2_candles = df.tail(2)
+        print(f"[{symbol}] Last 2 candles data (checked at {check_timestamp}):")
+        for idx, row in last_2_candles.iterrows():
+            date_str = str(row['date'])
+            if hasattr(row['date'], 'strftime'):
+                date_str = row['date'].strftime('%Y-%m-%d %H:%M:%S')
+            print(f"  [{date_str}] O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f}")
+        
         # Check for signal candle
         is_signal, signal_candle = check_signal_candle(df)
         
         if is_signal:
-            # Print last 2 rows
-            print(f"\n[SIGNAL DETECTED] {symbol} at {datetime.now()}")
-            print("Last 2 candles:")
-            print(df.tail(2))
+            # Signal detected - OHLC already printed above
+            print(f"\n✅ [SIGNAL DETECTED] {symbol} at {datetime.now()}")
             
             # Calculate levels (using SCH as estimated entry price for initial calculation)
             # Will recalculate with actual entry price when entry is taken
@@ -649,9 +545,32 @@ def check_signal_for_symbol(unique_key, params, positions_state):
                 'exited_today': False
             }
             
-            message = f"[SIGNAL] {symbol} - SCH: {levels['SCH']:.2f}, SCL: {levels['SCL']:.2f}, Entry: {levels['Entry']:.2f}"
-            print(message)
+            # Log comprehensive signal details to OrderLog
+            message = f"[SIGNAL DETECTED] {params['Symbol']} at {datetime.now()}"
             write_to_order_logs(message)
+            write_to_order_logs(f"  Signal Candle High (SCH): {levels['SCH']:.2f}")
+            write_to_order_logs(f"  Signal Candle Low (SCL): {levels['SCL']:.2f}")
+            write_to_order_logs(f"  Entry Price: {levels['Entry']:.2f}")
+            write_to_order_logs(f"  Initial Stop Loss: {levels['InitialSL']:.2f}")
+            write_to_order_logs(f"  Target 1: {levels['T1']:.2f} | SL1: {levels['SL1']:.2f} | Exit Lots: {params['Tgt1Lots']}")
+            write_to_order_logs(f"  Target 2: {levels['T2']:.2f} | SL2: {levels['SL2']:.2f} | Exit Lots: {params['Tgt2Lots']}")
+            write_to_order_logs(f"  Target 3: {levels['T3']:.2f} | SL3: {levels['SL3']:.2f} | Exit Lots: {params['Tgt3Lots']}")
+            write_to_order_logs(f"  Target 4: {levels['T4']:.2f} | SL4: {levels['SL4']:.2f} | Exit Lots: {params['Tgt4Lots']}")
+            write_to_order_logs(f"  Entry Lot Size: {params['EntryLots']}")
+            write_to_order_logs("")
+            
+            # Also log last 2 candles OHLC to OrderLog
+            write_to_order_logs("Last 2 candles (OHLC):")
+            for idx, row in last_2_candles.iterrows():
+                date_str = str(row['date'])
+                if hasattr(row['date'], 'strftime'):
+                    date_str = row['date'].strftime('%Y-%m-%d %H:%M:%S')
+                candle_info = f"  Date: {date_str}, Open: {row['open']:.2f}, High: {row['high']:.2f}, Low: {row['low']:.2f}, Close: {row['close']:.2f}, Volume: {int(row['volume']) if pd.notna(row['volume']) else 0}"
+                write_to_order_logs(candle_info)
+            write_to_order_logs("")
+            
+            # Print summary to console (duplicate removed)
+            print(f"SCH: {levels['SCH']:.2f}, SCL: {levels['SCL']:.2f}, Entry: {levels['Entry']:.2f}")
             save_state(positions_state)
             
             # Print comprehensive status immediately after signal detection
@@ -679,8 +598,11 @@ def monitor_entry_exit(unique_key, params, positions_state):
         if pos_state.get('exited_today'):
             return
         
-        # Skip if no signal detected
+        # Skip if no signal detected (but we'll still print status for monitoring)
+        # Don't return early - we want to print status even without signal
         if not pos_state.get('signal_detected'):
+            # No signal yet - just print status and return (don't process entry/exit)
+            # Status printing will be handled in main_strategy loop
             return
         
         # Track last status print time
@@ -782,9 +704,15 @@ def monitor_entry_exit(unique_key, params, positions_state):
                 pos_state['T4'] = levels['T4']
                 pos_state['SL4'] = levels['SL4']
                 
-                message = f"[ENTRY TAKEN] {params['Symbol']} at {ltp:.2f}, Lots: {entry_lots}, T1: {levels['T1']:.2f}, T2: {levels['T2']:.2f}, T3: {levels['T3']:.2f}, T4: {levels['T4']:.2f}"
-                print(message)
+                # Log entry taken to OrderLog
+                message = f"[ENTRY PRICE REACHED] {params['Symbol']} at {datetime.now()}"
                 write_to_order_logs(message)
+                write_to_order_logs(f"  Entry Price: {ltp:.2f}")
+                write_to_order_logs(f"  Taking BUY position with {entry_lots} lots")
+                write_to_order_logs("")
+                
+                # Also print to console
+                print(f"[ENTRY TAKEN] {params['Symbol']} at {ltp:.2f}, Lots: {entry_lots}, T1: {levels['T1']:.2f}, T2: {levels['T2']:.2f}, T3: {levels['T3']:.2f}, T4: {levels['T4']:.2f}")
                 save_state(positions_state)
                 
                 # Print comprehensive status immediately after entry
@@ -985,17 +913,38 @@ def main_strategy():
         for unique_key, params in result_dict.items():
             monitor_entry_exit(unique_key, params, positions_state)
         
-        # Print status for symbols with signals or open positions (even if not in monitoring mode yet)
+        # Print status for all symbols periodically
+        # For symbols with signals/positions: print every 30 seconds
+        # For symbols without signals: print every 60 seconds to show they're being monitored
         for unique_key, params in result_dict.items():
-            pos_state = positions_state.get(unique_key, {})
-            if pos_state.get('signal_detected') or pos_state.get('entry_taken'):
-                # Only print if not already printed in monitor_entry_exit
-                current_time = datetime.now()
-                last_status_print = pos_state.get('last_status_print')
-                if last_status_print is None:
-                    print_trading_status(unique_key, params, positions_state)
+            # Ensure position state exists for this symbol
+            if unique_key not in positions_state:
+                positions_state[unique_key] = {}
+            
+            pos_state = positions_state[unique_key]
+            current_time = datetime.now()
+            last_status_print = pos_state.get('last_status_print')
+            
+            # Determine print interval based on whether signal/entry exists
+            has_signal_or_entry = pos_state.get('signal_detected') or pos_state.get('entry_taken')
+            print_interval = 30 if has_signal_or_entry else 60  # 30s for active, 60s for monitoring
+            
+            should_print = False
+            if last_status_print is None:
+                # First time - always print
+                should_print = True
+                pos_state['last_status_print'] = current_time.isoformat()
+            else:
+                if isinstance(last_status_print, str):
+                    last_status_print = datetime.fromisoformat(last_status_print)
+                time_diff = (current_time - last_status_print).total_seconds()
+                if time_diff >= print_interval:
+                    should_print = True
                     pos_state['last_status_print'] = current_time.isoformat()
-                    save_state(positions_state)
+            
+            if should_print:
+                print_trading_status(unique_key, params, positions_state)
+                save_state(positions_state)
             
     except Exception as e:
         print("Error in main strategy:", str(e))
@@ -1021,6 +970,29 @@ if __name__ == "__main__":
                                         PIN=PIN, TOTP_KEY=TOTP_KEY)
     get_user_settings()
     
+    # Log startup information to console and OrderLog
+    print(f"\n{'='*80}")
+    print(f"[STARTUP] Strategy initialized at {datetime.now()}")
+    print(f"[STARTUP] Loaded {len(result_dict)} symbol(s) from TradeSettings.csv")
+    for unique_key, params in result_dict.items():
+        product_type = params.get('ProductType', 'intraday')
+        timeframe = params.get('Timeframe', 'N/A')
+        start_time = params.get('StartTime', 'N/A')
+        stop_time = params.get('StopTime', 'N/A')
+        print(f"  - {params['Symbol']} (ProductType: {product_type}, Timeframe: {timeframe} min, StartTime: {start_time}, StopTime: {stop_time})")
+    print(f"{'='*80}\n")
+    
+    write_to_order_logs(f"\n{'='*80}")
+    write_to_order_logs(f"[STARTUP] Strategy initialized at {datetime.now()}")
+    write_to_order_logs(f"[STARTUP] Loaded {len(result_dict)} symbol(s) from TradeSettings.csv")
+    for unique_key, params in result_dict.items():
+        product_type = params.get('ProductType', 'intraday')
+        timeframe = params.get('Timeframe', 'N/A')
+        start_time = params.get('StartTime', 'N/A')
+        stop_time = params.get('StopTime', 'N/A')
+        write_to_order_logs(f"  - {params['Symbol']} (ProductType: {product_type}, Timeframe: {timeframe} min, StartTime: {start_time}, StopTime: {stop_time})")
+    write_to_order_logs(f"{'='*80}\n")
+    
     # Load state - this is positional strategy, so we need to carry forward positions
     # Make positions_state global so it persists across main_strategy calls
     global positions_state
@@ -1045,31 +1017,42 @@ if __name__ == "__main__":
             if pos_state.get('exited_today'):
                 # For intraday: clear it for fresh pattern check today
                 # For positional: also clear (position was exited, so start fresh)
-                print(f"[STATE] Clearing exited position for {pos_state.get('Symbol', key)} (ProductType: {product_type}) - will check for fresh pattern")
+                symbol_name = pos_state.get('Symbol', key)
+                print(f"[STATE] Clearing exited position for {symbol_name} (ProductType: {product_type}) - will check for fresh pattern")
+                write_to_order_logs(f"[STATE] Clearing exited position for {symbol_name} (ProductType: {product_type}) - will check for fresh pattern")
                 positions_state[key] = {}  # Clear state for fresh pattern check
             elif pos_state.get('entry_taken'):
                 # Position is still open
+                symbol_name = pos_state.get('Symbol', key)
                 if product_type == 'positional':
                     # Positional: continue monitoring it
-                    print(f"[STATE] Carrying forward OPEN POSITIONAL position for {pos_state.get('Symbol', key)}")
+                    print(f"[STATE] Carrying forward OPEN POSITIONAL position for {symbol_name}")
                     print(f"        Entry Price: {pos_state.get('entry_price', 'N/A')}")
                     print(f"        Remaining Lots: {pos_state.get('remaining_lots', 0)}")
                     print(f"        Position State: {pos_state.get('position_state', 'N/A')}")
+                    write_to_order_logs(f"[STATE] Carrying forward OPEN POSITIONAL position for {symbol_name}")
+                    write_to_order_logs(f"  Entry Price: {pos_state.get('entry_price', 'N/A')}")
+                    write_to_order_logs(f"  Remaining Lots: {pos_state.get('remaining_lots', 0)}")
+                    write_to_order_logs(f"  Position State: {pos_state.get('position_state', 'N/A')}")
                     # Reset exited_today flag for new day
                     pos_state['exited_today'] = False
                 else:
                     # Intraday: should have been squared off at StopTime, but if not, clear it
-                    print(f"[STATE] Clearing intraday position for {pos_state.get('Symbol', key)} - should have been squared off at StopTime")
+                    print(f"[STATE] Clearing intraday position for {symbol_name} - should have been squared off at StopTime")
+                    write_to_order_logs(f"[STATE] Clearing intraday position for {symbol_name} - should have been squared off at StopTime")
                     positions_state[key] = {}  # Clear state for fresh pattern check
             elif pos_state.get('signal_detected') and not pos_state.get('entry_taken'):
                 # Signal detected but entry not taken
+                symbol_name = pos_state.get('Symbol', key)
                 if product_type == 'positional':
                     # Positional: continue waiting for entry
-                    print(f"[STATE] Carrying forward SIGNAL for {pos_state.get('Symbol', key)} (Positional) - still waiting for entry")
+                    print(f"[STATE] Carrying forward SIGNAL for {symbol_name} (Positional) - still waiting for entry")
+                    write_to_order_logs(f"[STATE] Carrying forward SIGNAL for {symbol_name} (Positional) - still waiting for entry")
                     pos_state['exited_today'] = False
                 else:
                     # Intraday: clear signal for fresh check today
-                    print(f"[STATE] Clearing intraday signal for {pos_state.get('Symbol', key)} - will check for fresh pattern")
+                    print(f"[STATE] Clearing intraday signal for {symbol_name} - will check for fresh pattern")
+                    write_to_order_logs(f"[STATE] Clearing intraday signal for {symbol_name} - will check for fresh pattern")
                     positions_state[key] = {}  # Clear state for fresh pattern check
             else:
                 # Empty or invalid state - clear it
@@ -1078,15 +1061,25 @@ if __name__ == "__main__":
         # Save updated state
         save_state(positions_state)
         print("[STATE] State updated for new trading day\n")
+        write_to_order_logs("[STATE] State updated for new trading day\n")
     elif state_date == today:
         print(f"[STATE] Loading state from today: {today}")
+        write_to_order_logs(f"[STATE] Loading state from today: {today}")
         open_positions = [k for k, v in positions_state.items() if v.get('entry_taken')]
         if open_positions:
             print(f"[STATE] Found {len(open_positions)} open position(s) to monitor")
+            write_to_order_logs(f"[STATE] Found {len(open_positions)} open position(s) to monitor")
+            for pos_key in open_positions:
+                pos = positions_state[pos_key]
+                symbol_name = pos.get('Symbol', pos_key)
+                write_to_order_logs(f"  - {symbol_name}: Entry Price: {pos.get('entry_price', 'N/A')}, Remaining Lots: {pos.get('remaining_lots', 0)}")
     else:
         print("[STATE] No previous state found - starting fresh")
         print("[STATE] All symbols will check for fresh green candle patterns")
         print("[STATE] No carry-forward positions - clean start")
+        write_to_order_logs("[STATE] No previous state found - starting fresh")
+        write_to_order_logs("[STATE] All symbols will check for fresh green candle patterns")
+        write_to_order_logs("[STATE] No carry-forward positions - clean start")
 
     # Initialize Market Data API
     fyres_websocket(FyerSymbolList)
