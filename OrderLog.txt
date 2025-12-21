@@ -1,2 +1,1 @@
-[2025-12-14 22:11:45] STARTUP: settings loaded and authentication complete
-[2025-12-14 22:11:54] NIFTY_10: Trading stopped at StopTime 15:14:00, all positions closed.
+[SIGNAL] NSE:NIFTY25DECFUT - SCH: 26035.90, SCL: 26030.30, Entry: 26078.03

@@ -497,7 +497,7 @@ def fyres_websocket_option(symbollist):
 
 
 
-def place_order(symbol,quantity,type,side,price):
+def place_order(symbol,quantity,type,side,price,product_type="INTRADAY"):
     # Set quantity to 1 by default if not provided
     if quantity is None or quantity == 0:
         quantity = 1
@@ -510,10 +510,23 @@ def place_order(symbol,quantity,type,side,price):
     # Keep side as integer (1=Buy, -1=Sell)
     order_side = int(side)
     
+    # Map ProductType from TradeSettings to Fyers API productType
+    # "intraday" -> "INTRADAY", "positional" -> "MARGIN"
+    product_type_lower = str(product_type).lower()
+    if product_type_lower == "positional":
+        fyers_product_type = "MARGIN"
+    elif product_type_lower == "intraday":
+        fyers_product_type = "INTRADAY"
+    else:
+        # Default to INTRADAY if unknown
+        fyers_product_type = "INTRADAY"
+        print(f"Warning: Unknown product_type '{product_type}', defaulting to INTRADAY")
+    
     print("quantity: ",quantity)
     print("price: ",price)
     print("type: ",order_type)
     print("side: ",order_side)
+    print("productType: ",fyers_product_type)
     
     # For market orders (type=2), set limitPrice to 0
     limit_price = 0 if order_type == 2 else price
@@ -524,7 +537,7 @@ def place_order(symbol,quantity,type,side,price):
         "qty": quantity,
         "type": order_type,
         "side": order_side,
-        "productType": "INTRADAY",
+        "productType": fyers_product_type,
         "limitPrice": limit_price,
         "stopPrice": 0,
         "validity": "DAY",

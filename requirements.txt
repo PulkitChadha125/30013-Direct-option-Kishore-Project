@@ -6,3 +6,4 @@ pytz
 numpy
 polars
 polars-talib
+setuptools

@@ -1,0 +1,1 @@
+{"level":"ERROR","location":"[__symbol_conversion:1352] data_ws","message":{"code":-300,"message":"Please provide a valid symbol","s":"error","type":"sub","invalid_symbols":["NSE:NIFTY"]},"timestamp":"2025-12-20 13:05:53,495+0530","service":"FyersDataSocket"}
