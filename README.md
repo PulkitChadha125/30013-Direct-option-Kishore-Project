@@ -17,11 +17,11 @@ The strategy identifies signal candles using a two-step approach:
 
 2. **Green Candle Pattern (If First Candle is Red):**
    - If the first candle of the day is **red** (close < open), the system checks for a specific green candle pattern
-   - Analyzes the last 3 candles from historical data
-   - The 2nd to last candle (previous candle) must be **green** (close > open)
-   - The green candle must meet two conditions:
-     - Previous candle's **high** < Previous to previous candle's **high**
-     - Previous candle's **low** < Previous to previous candle's **low**
+   - The system looks for the next **green candle** (close > open) that meets the pattern conditions
+   - The green candle must meet two conditions when compared to the **previous candle**:
+     - Green candle's **high** < Previous candle's **high**
+     - Green candle's **low** < Previous candle's **low**
+   - This means the green candle is completely below the previous candle (both high and low are lower)
    - When this pattern is detected, the green candle is marked as the **Signal Candle**
    - **SCH** (Signal Candle High) and **SCL** (Signal Candle Low) are recorded
 
@@ -34,6 +34,12 @@ The strategy identifies signal candles using a two-step approach:
    - Time is normalized to the lower timeframe value (e.g., if current time is 13:17 and timeframe is 10 minutes, it normalizes to 13:10)
    - Next check time = Normalized time + Timeframe minutes (e.g., 13:20 for 10-minute timeframe)
    - Each symbol has independent scheduling based on its timeframe
+
+4. **Historical Data Storage:**
+   - All historical OHLC data is automatically saved to CSV files in the `data/` folder
+   - Each symbol gets its own CSV file: `data/<sanitized_symbol_name>.csv`
+   - Files are updated each time historical data is fetched
+   - CSV files contain columns: `date`, `open`, `high`, `low`, `close`, `volume`
 
 ### Phase 2: Entry and Exit Management
 
@@ -142,6 +148,8 @@ The strategy supports two product types, configurable per symbol:
 ├── FyersCredentials.csv      # Fyers API credentials
 ├── state.json               # Position state persistence (auto-generated)
 ├── OrderLog.txt            # Order execution logs (auto-generated)
+├── data/                    # Historical data folder (auto-generated)
+│   └── <symbol_name>.csv   # Historical OHLC data for each symbol
 ├── requirements.txt         # Python dependencies
 └── README.md               # This file
 ```
@@ -298,8 +306,8 @@ python main.py
 - **First checks the first candle of the present day:**
   - If first candle is green → marks it as Signal Candle
 - **If first candle is red:**
-  - Analyzes last 3 candles for the green candle pattern
-  - Checks if previous candle is green and meets pattern conditions
+  - Looks for the next green candle that meets pattern conditions
+  - Checks if green candle's high and low are both less than the previous candle's high and low
 - If signal detected:
   - Calculates Entry, SL, and Target levels
   - Stores signal in state
@@ -574,8 +582,9 @@ This trading system is for educational and research purposes. Trading involves s
 - ✅ **Updated Signal Candle Logic:**
   - Now checks first candle of present day (if green = signal candle)
   - If first candle is red, checks for green candle pattern with updated conditions
-  - Previous candle High < prev to previous candle's High
-  - Previous candle Low < prev to previous candle's Low
+  - Green candle High < Previous candle's High
+  - Green candle Low < Previous candle's Low
+  - Green candle must be completely below the previous candle (not an inside bar pattern)
 - ✅ **ProductType Support:**
   - Added `ProductType` column to TradeSettings.csv
   - Supports `positional` (carry-forward) and `intraday` (square-off at StopTime)

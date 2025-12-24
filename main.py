@@ -6,6 +6,8 @@ import json
 import time
 import traceback
 import sys
+import os
+import pytz
 from FyresIntegration import *
 
 def normalize_time_to_timeframe(current_time, timeframe_minutes):
@@ -75,7 +77,12 @@ def delete_file_contents(file_name):
 
 def write_to_order_logs(message):
     with open('OrderLog.txt', 'a') as file:  # Open the file in append mode
-        file.write(message + '\n')
+        # Skip timestamp for empty lines (used as separators)
+        if message.strip() == "":
+            file.write('\n')
+        else:
+            timestamp = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
+            file.write(f"[{timestamp}] {message}\n")
 
 def load_state():
     """Load state from state.json file - returns positions even if from different day"""
@@ -135,98 +142,140 @@ def is_time_between(start_time_str, stop_time_str, current_time=None):
         print(f"Error parsing time: {e}")
         return True  # Default to True if parsing fails
 
-def check_signal_candle(df):
+def check_signal_candle(df, start_time_str, timeframe_minutes):
     """
     Check for signal candle based on new logic:
-    1. Check first candle of present day - if green, it's signal candle
-    2. If first candle is red, check green candle pattern:
-       - Previous candle is green
+    1. Calculate first candle time = StartTime - timeframe (e.g., 9:30 - 15 mins = 9:15)
+    2. Check if that first candle is green - if yes, it's signal candle
+    3. If first candle is red, wait for next green candle that meets pattern:
+       - Green candle (close > open)
        - Previous candle High < prev to previous candle's High
        - Previous candle Low < prev to previous candle's Low
-    Returns (is_signal, signal_candle_data) where signal_candle_data is dict with high, low, open, close
+    Returns (is_signal, signal_candle_data, first_candle_info) where:
+        - signal_candle_data is dict with high, low, open, close (if signal found)
+        - first_candle_info is dict with 'color', 'date', 'open', 'high', 'low', 'close' for the first candle
     """
     if len(df) < 2:
-        return False, None
+        return False, None, None
     
-    # Get today's date
-    today = datetime.now().date()
+    # Calculate the expected first candle time = StartTime - timeframe
+    try:
+        start_hour, start_min = map(int, start_time_str.split(':'))
+        today = datetime.now(pytz.timezone('Asia/Kolkata')).date()
+        start_time_today = pytz.timezone('Asia/Kolkata').localize(datetime.combine(today, dt_time(start_hour, start_min)))
+        first_candle_time = start_time_today - timedelta(minutes=timeframe_minutes)
+    except Exception as e:
+        print(f"Error parsing StartTime: {e}")
+        return False, None, None
     
-    # Filter candles for today only (without modifying original dataframe)
-    df_copy = df.copy()
-    df_copy['date_only'] = pd.to_datetime(df_copy['date']).dt.date
-    today_candles = df_copy[df_copy['date_only'] == today].copy()
-    
-    # If no candles for today, return False
-    if len(today_candles) == 0:
-        return False, None
-    
-    # Get first candle of today (sorted by time to ensure first candle)
-    today_candles = today_candles.sort_values('date')
-    first_candle_today = today_candles.iloc[0]
-    
-    # Check if first candle is green (close > open)
-    is_first_green = first_candle_today['close'] > first_candle_today['open']
-    
-    if is_first_green:
-        # First candle is green - it's our signal candle
-        signal_candle = {
-            'high': float(first_candle_today['high']),
-            'low': float(first_candle_today['low']),
-            'open': float(first_candle_today['open']),
-            'close': float(first_candle_today['close'])
-        }
-        return True, signal_candle
-    
-    # First candle is red - check for green candle pattern in previous TWO bars only
-    # We need to find the candle immediately before today's first candle
     # Sort dataframe by date to ensure chronological order
     df_sorted = df.sort_values('date').copy()
     df_sorted = df_sorted.reset_index(drop=True)
     
-    # Find the position/index of today's first candle in the sorted dataframe
-    # Get the timestamp of today's first candle
-    first_candle_timestamp = pd.to_datetime(first_candle_today['date'])
+    # Find the exact first candle at first_candle_time
+    # Convert to same timezone-aware format for comparison
+    df_sorted['date_dt'] = pd.to_datetime(df_sorted['date'])
+    first_candle_exact = df_sorted[df_sorted['date_dt'] == first_candle_time]
     
-    # Find all rows with date less than today's first candle
-    before_today = df_sorted[pd.to_datetime(df_sorted['date']) < first_candle_timestamp]
+    if len(first_candle_exact) > 0:
+        # Found exact match
+        first_candle_to_check = first_candle_exact.iloc[0]
+    else:
+        # Look for the closest candle at or after first_candle_time
+        first_candle_mask = df_sorted['date_dt'] >= first_candle_time
+        first_candle_candidates = df_sorted[first_candle_mask]
+        
+        if len(first_candle_candidates) == 0:
+            print(f"No candles found at or after {first_candle_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            return False, None, None
+        
+        # Get the first candle to check (the one closest after first_candle_time)
+        first_candle_to_check = first_candle_candidates.iloc[0]
+        print(f"Note: Exact candle at {first_candle_time.strftime('%H:%M:%S')} not found, using {first_candle_to_check['date']}")
     
-    # We need at least 2 candles before today's first candle
-    if len(before_today) < 2:
-        return False, None
+    # Check if first candle is green (close > open)
+    is_first_green = first_candle_to_check['close'] > first_candle_to_check['open']
     
-    # Get the last 2 candles before today (previous two bars)
-    prev_candle = before_today.iloc[-1]  # Previous candle (the green one we're checking)
-    prev_to_prev_candle = before_today.iloc[-2]  # Previous to previous candle
+    # Create first candle info for logging
+    first_candle_info = {
+        'color': 'GREEN' if is_first_green else 'RED',
+        'date': first_candle_to_check['date'],
+        'open': float(first_candle_to_check['open']),
+        'high': float(first_candle_to_check['high']),
+        'low': float(first_candle_to_check['low']),
+        'close': float(first_candle_to_check['close'])
+    }
     
-    # Check if previous candle is green (close > open)
-    is_prev_green = prev_candle['close'] > prev_candle['open']
-    
-    if not is_prev_green:
-        return False, None
-    
-    # Check conditions for green candle pattern:
-    # Previous candle High < prev to previous candle's High
-    # Previous candle Low < prev to previous candle's Low
-    condition1 = prev_candle['high'] < prev_to_prev_candle['high']
-    condition2 = prev_candle['low'] < prev_to_prev_candle['low']
-    
-    if condition1 and condition2:
+    if is_first_green:
+        # First candle is green - it's our signal candle
         signal_candle = {
-            'high': float(prev_candle['high']),
-            'low': float(prev_candle['low']),
-            'open': float(prev_candle['open']),
-            'close': float(prev_candle['close'])
+            'high': float(first_candle_to_check['high']),
+            'low': float(first_candle_to_check['low']),
+            'open': float(first_candle_to_check['open']),
+            'close': float(first_candle_to_check['close'])
         }
-        return True, signal_candle
+        print(f"✅ First candle at {first_candle_to_check['date']} is GREEN - Signal candle detected")
+        return True, signal_candle, first_candle_info
     
-    return False, None
+    # First candle is red - wait for next green candle that meets the pattern
+    print(f"⚠️ First candle at {first_candle_to_check['date']} is RED - Waiting for green candle pattern")
+    
+    # Find all candles after the first candle
+    first_candle_timestamp = pd.to_datetime(first_candle_to_check['date'])
+    candles_after_first = df_sorted[df_sorted['date_dt'] > first_candle_timestamp]
+    
+    if len(candles_after_first) == 0:
+        return False, None, first_candle_info
+    
+    # Check each subsequent candle for green candle pattern
+    for idx in range(len(candles_after_first)):
+        current_candle = candles_after_first.iloc[idx]
+        
+        # Check if current candle is green
+        is_current_green = current_candle['close'] > current_candle['open']
+        
+        if not is_current_green:
+            continue  # Skip red candles
+        
+        # Current candle is green - check pattern conditions
+        # We need at least 1 candle before this green candle
+        current_candle_timestamp = pd.to_datetime(current_candle['date'])
+        candles_before_current = df_sorted[df_sorted['date_dt'] < current_candle_timestamp]
+        
+        if len(candles_before_current) < 1:
+            continue  # Not enough history
+        
+        # Get previous candle
+        prev_candle = candles_before_current.iloc[-1]  # 14:43 candle (previous)
+        
+        # Check conditions for green candle pattern:
+        # At 14:45, we check the green candle (14:44) against the previous candle (14:43)
+        # The green candle (14:44) should have both high and low less than previous candle (14:43)
+        # This means: 14:44 High < 14:43 High AND 14:44 Low < 14:43 Low
+        # (Green candle is completely below the previous candle)
+        condition1 = current_candle['high'] < prev_candle['high']
+        condition2 = current_candle['low'] < prev_candle['low']
+        
+        if condition1 and condition2:
+            signal_candle = {
+                'high': float(current_candle['high']),
+                'low': float(current_candle['low']),
+                'open': float(current_candle['open']),
+                'close': float(current_candle['close'])
+            }
+            print(f"✅ Green candle pattern found at {current_candle['date']} - Signal candle detected")
+            return True, signal_candle, first_candle_info
+    
+    return False, None, first_candle_info
 
 def calculate_levels(signal_candle, actual_entry_price, t2_percent, t3_percent, t4_percent, sl1_points, sl2_points, sl3_points, sl4_points):
     """
-    Calculate all entry, exit, and target levels based on signal candle
-    entry_price is the actual entry price (EP) used for target calculations
-    Entry trigger is always calculated from SCH
-    Returns dict with all calculated levels
+    Calculate all entry, exit, and target levels based on signal candle.
+
+    - entry_trigger is always calculated from SCH.
+    - Targets (T1–T4) and SLs (SL1–SL4) are calculated from EP:
+        - At signal time: EP = entry_trigger (theoretical entry)
+        - After actual entry: EP = actual traded entry price (LTP)
     """
     import math
     
@@ -239,21 +288,25 @@ def calculate_levels(signal_candle, actual_entry_price, t2_percent, t3_percent, 
     # Initial SL = SCL - (√(SCL) × 26.11%)
     initial_sl = SCL - (math.sqrt(SCL) * 0.2611)
     
-    # Targets are calculated from actual entry price (EP)
+    # Decide EP (Entry Price) for target calculations
+    # - If actual_entry_price is provided (after real entry), use that
+    # - Otherwise (at signal time), use the theoretical entry_trigger
+    ep = actual_entry_price if actual_entry_price is not None else entry_trigger
+    
     # T1 = EP + 13.06%
-    t1 = actual_entry_price + (actual_entry_price * 0.1306)
+    t1 = ep + (ep * 0.1306)
     sl1 = t1 - sl1_points
     
     # T2 = EP + T2Percent%
-    t2 = actual_entry_price + (actual_entry_price * t2_percent / 100)
+    t2 = ep + (ep * t2_percent / 100)
     sl2 = t2 - sl2_points
     
     # T3 = EP + T3Percent%
-    t3 = actual_entry_price + (actual_entry_price * t3_percent / 100)
+    t3 = ep + (ep * t3_percent / 100)
     sl3 = t3 - sl3_points
     
     # T4 = EP + T4Percent%
-    t4 = actual_entry_price + (actual_entry_price * t4_percent / 100)
+    t4 = ep + (ep * t4_percent / 100)
     sl4 = t4 - sl4_points
     
     return {
@@ -387,7 +440,7 @@ def get_user_settings():
     global result_dict, instrument_id_list, Equity_instrument_id_list, Future_instrument_id_list, FyerSymbolList, positions_state
     import pandas as pd
 
-    delete_file_contents("OrderLog.txt")
+    # delete_file_contents("OrderLog.txt")
 
     try:
         csv_path = 'TradeSettings.csv'
@@ -458,6 +511,20 @@ def UpdateData():
                 # print(f"Updated {symbol} with LTP: {ltp}")
                 break  # Optional: skip if you assume each symbol is unique
 
+def sanitize_symbol_for_filename(symbol):
+    """
+    Sanitize symbol name to be used as a valid filename.
+    Replaces invalid characters with underscores.
+    """
+    # Replace invalid filename characters with underscore
+    invalid_chars = '<>:"/\\|?*'
+    sanitized = symbol
+    for char in invalid_chars:
+        sanitized = sanitized.replace(char, '_')
+    # Also replace spaces and colons
+    sanitized = sanitized.replace(' ', '_').replace(':', '_')
+    return sanitized
+
 def check_signal_for_symbol(unique_key, params, positions_state):
     """
     Phase 1: Check for signal candle pattern for a symbol
@@ -486,30 +553,79 @@ def check_signal_for_symbol(unique_key, params, positions_state):
         print(f"\n[{symbol}] Fetching historical data at {check_timestamp}")
         df = fetchOHLC(symbol, timeframe)
         
+        # Save historical data to CSV file inside ./data folder
+        try:
+            sanitized_symbol = sanitize_symbol_for_filename(symbol)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            data_dir = os.path.join(base_dir, "data")
+            os.makedirs(data_dir, exist_ok=True)
+            csv_filename = os.path.join(data_dir, f"{sanitized_symbol}.csv")
+            # Using overwrite mode to keep latest snapshot of historical data
+            df.to_csv(csv_filename, index=False)
+            print(f"[{symbol}] Historical data saved to {csv_filename}")
+        except Exception as e:
+            print(f"[{symbol}] Warning: Failed to save historical data to CSV: {e}")
+        
         if len(df) < 3:
             return False
         
-        # Print last 2 candles OHLC being checked with timestamp
-        last_2_candles = df.tail(2)
-        print(f"[{symbol}] Last 2 candles data (checked at {check_timestamp}):")
+        # Filter out the current/forming candle
+        # Get the normalized current time (the forming candle's start time)
+        now = datetime.now(pytz.timezone('Asia/Kolkata'))
+        current_normalized_time = normalize_time_to_timeframe(now, timeframe)
+        
+        # Filter dataframe to exclude candles at or after the current normalized time
+        # Only include completed candles (candles that ended before current time)
+        df_completed = df[df['date'] < current_normalized_time].copy()
+        
+        if len(df_completed) < 2:
+            print(f"[{symbol}] Not enough completed candles. Current forming candle: {current_normalized_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            return False
+        
+        # Get last 2 completed candles (before the forming candle)
+        last_2_candles = df_completed.tail(2)
+        print(f"[{symbol}] Last 2 completed candles data (checked at {check_timestamp}, excluding forming candle at {current_normalized_time.strftime('%H:%M:%S')}):")
         for idx, row in last_2_candles.iterrows():
             date_str = str(row['date'])
             if hasattr(row['date'], 'strftime'):
                 date_str = row['date'].strftime('%Y-%m-%d %H:%M:%S')
             print(f"  [{date_str}] O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f}")
         
-        # Check for signal candle
-        is_signal, signal_candle = check_signal_candle(df)
+        # Add separator line between each fetch
+        print("="*80)
+        
+        # Check for signal candle using only completed candles
+        is_signal, signal_candle, first_candle_info = check_signal_candle(df_completed, start_time, timeframe)
+        
+        # Log first candle color after StartTime (only once per symbol per day)
+        if first_candle_info:
+            # Check if we've already logged first candle for this symbol today
+            if unique_key not in positions_state:
+                positions_state[unique_key] = {}
+            
+            pos_state = positions_state[unique_key]
+            if not pos_state.get('first_candle_logged', False):
+                candle_date_str = str(first_candle_info['date'])
+                if hasattr(first_candle_info['date'], 'strftime'):
+                    candle_date_str = first_candle_info['date'].strftime('%Y-%m-%d %H:%M:%S')
+                
+                first_candle_log = f"[FIRST CANDLE] {params['Symbol']} - Color: {first_candle_info['color']} | Date: {candle_date_str} | O:{first_candle_info['open']:.2f} H:{first_candle_info['high']:.2f} L:{first_candle_info['low']:.2f} C:{first_candle_info['close']:.2f}"
+                print(first_candle_log)
+                write_to_order_logs(first_candle_log)
+                pos_state['first_candle_logged'] = True
+                save_state(positions_state)
         
         if is_signal:
             # Signal detected - OHLC already printed above
             print(f"\n✅ [SIGNAL DETECTED] {symbol} at {datetime.now()}")
             
-            # Calculate levels (using SCH as estimated entry price for initial calculation)
-            # Will recalculate with actual entry price when entry is taken
+            # Calculate levels at signal time:
+            # - entry_trigger is from SCH
+            # - Targets are calculated from EP = entry_trigger (theoretical entry)
+            #   (They will be recalculated from actual entry price when entry is taken)
             levels = calculate_levels(
                 signal_candle,
-                signal_candle['high'],  # Use SCH as estimated EP for initial target calculation
+                None,  # Use theoretical EP = entry_trigger for initial target calculation
                 params["T2Percent"],
                 params["T3Percent"],
                 params["T4Percent"],
@@ -606,7 +722,7 @@ def monitor_entry_exit(unique_key, params, positions_state):
             return
         
         # Track last status print time
-        current_time = datetime.now()
+        current_time = datetime.now(pytz.timezone('Asia/Kolkata'))
         last_status_print = pos_state.get('last_status_print')
         
         # Print status every 30 seconds or on first signal
@@ -617,6 +733,9 @@ def monitor_entry_exit(unique_key, params, positions_state):
         else:
             if isinstance(last_status_print, str):
                 last_status_print = datetime.fromisoformat(last_status_print)
+                # Ensure timezone-aware
+                if last_status_print.tzinfo is None:
+                    last_status_print = pytz.timezone('Asia/Kolkata').localize(last_status_print)
             time_diff = (current_time - last_status_print).total_seconds()
             if time_diff >= 30:  # Print every 30 seconds
                 should_print_status = True
@@ -871,7 +990,7 @@ def main_strategy():
         # Update LTP data
         UpdateData()
         
-        now = datetime.now()
+        now = datetime.now(pytz.timezone('Asia/Kolkata'))
         
         # Phase 1: Check for signals (timeframe-based, per symbol)
         for unique_key, params in result_dict.items():
@@ -888,14 +1007,39 @@ def main_strategy():
             
             # Initialize next_check_time if not set
             if next_check_time is None:
-                normalized_time = normalize_time_to_timeframe(now, timeframe)
-                next_check_time = normalized_time + timedelta(minutes=timeframe)
+                # Set first check time to StartTime + 1 second (e.g., 9:25:01)
+                start_time_str = params.get("StartTime")
+                if start_time_str:
+                    try:
+                        start_hour, start_min = map(int, start_time_str.split(':'))
+                        # Create datetime for today at StartTime + 1 second
+                        today = now.date()
+                        first_check_time = pytz.timezone('Asia/Kolkata').localize(datetime.combine(today, dt_time(start_hour, start_min, 1)))
+                        # If StartTime has already passed today, set to next timeframe interval
+                        if now >= first_check_time:
+                            normalized_time = normalize_time_to_timeframe(now, timeframe)
+                            next_check_time = normalized_time + timedelta(minutes=timeframe)
+                        else:
+                            next_check_time = first_check_time
+                    except Exception as e:
+                        print(f"Error parsing StartTime for {params.get('Symbol', 'unknown')}: {e}")
+                        # Fallback to normalized time logic
+                        normalized_time = normalize_time_to_timeframe(now, timeframe)
+                        next_check_time = normalized_time + timedelta(minutes=timeframe)
+                else:
+                    # No StartTime specified, use normalized time logic
+                    normalized_time = normalize_time_to_timeframe(now, timeframe)
+                    next_check_time = normalized_time + timedelta(minutes=timeframe)
+                
                 pos_state['next_check_time'] = next_check_time.isoformat()
                 save_state(positions_state)
             
             # Convert string back to datetime
             if isinstance(next_check_time, str):
                 next_check_time = datetime.fromisoformat(next_check_time)
+                # Ensure timezone-aware (in case it was saved as naive)
+                if next_check_time.tzinfo is None:
+                    next_check_time = pytz.timezone('Asia/Kolkata').localize(next_check_time)
             
             # Check if it's time to fetch historical data
             if now >= next_check_time:
@@ -922,7 +1066,7 @@ def main_strategy():
                 positions_state[unique_key] = {}
             
             pos_state = positions_state[unique_key]
-            current_time = datetime.now()
+            current_time = datetime.now(pytz.timezone('Asia/Kolkata'))
             last_status_print = pos_state.get('last_status_print')
             
             # Determine print interval based on whether signal/entry exists
@@ -937,6 +1081,9 @@ def main_strategy():
             else:
                 if isinstance(last_status_print, str):
                     last_status_print = datetime.fromisoformat(last_status_print)
+                    # Ensure timezone-aware
+                    if last_status_print.tzinfo is None:
+                        last_status_print = pytz.timezone('Asia/Kolkata').localize(last_status_print)
                 time_diff = (current_time - last_status_print).total_seconds()
                 if time_diff >= print_interval:
                     should_print = True
@@ -971,8 +1118,10 @@ if __name__ == "__main__":
     get_user_settings()
     
     # Log startup information to console and OrderLog
+    startup_time = datetime.now()
     print(f"\n{'='*80}")
-    print(f"[STARTUP] Strategy initialized at {datetime.now()}")
+    print(f"[PROJECT START] Trading Strategy Started at {startup_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"[STARTUP] Strategy initialized at {startup_time}")
     print(f"[STARTUP] Loaded {len(result_dict)} symbol(s) from TradeSettings.csv")
     for unique_key, params in result_dict.items():
         product_type = params.get('ProductType', 'intraday')
@@ -983,7 +1132,8 @@ if __name__ == "__main__":
     print(f"{'='*80}\n")
     
     write_to_order_logs(f"\n{'='*80}")
-    write_to_order_logs(f"[STARTUP] Strategy initialized at {datetime.now()}")
+    write_to_order_logs(f"[PROJECT START] Trading Strategy Started at {startup_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    write_to_order_logs(f"[STARTUP] Strategy initialized at {startup_time}")
     write_to_order_logs(f"[STARTUP] Loaded {len(result_dict)} symbol(s) from TradeSettings.csv")
     for unique_key, params in result_dict.items():
         product_type = params.get('ProductType', 'intraday')
@@ -1042,18 +1192,12 @@ if __name__ == "__main__":
                     write_to_order_logs(f"[STATE] Clearing intraday position for {symbol_name} - should have been squared off at StopTime")
                     positions_state[key] = {}  # Clear state for fresh pattern check
             elif pos_state.get('signal_detected') and not pos_state.get('entry_taken'):
-                # Signal detected but entry not taken
+                # Signal detected but entry not taken (for ANY product type)
+                # New day should start FRESH and look for a new pattern
                 symbol_name = pos_state.get('Symbol', key)
-                if product_type == 'positional':
-                    # Positional: continue waiting for entry
-                    print(f"[STATE] Carrying forward SIGNAL for {symbol_name} (Positional) - still waiting for entry")
-                    write_to_order_logs(f"[STATE] Carrying forward SIGNAL for {symbol_name} (Positional) - still waiting for entry")
-                    pos_state['exited_today'] = False
-                else:
-                    # Intraday: clear signal for fresh check today
-                    print(f"[STATE] Clearing intraday signal for {symbol_name} - will check for fresh pattern")
-                    write_to_order_logs(f"[STATE] Clearing intraday signal for {symbol_name} - will check for fresh pattern")
-                    positions_state[key] = {}  # Clear state for fresh pattern check
+                print(f"[STATE] Clearing pending SIGNAL (no entry taken) for {symbol_name} (ProductType: {product_type}) - will check for fresh pattern today")
+                write_to_order_logs(f"[STATE] Clearing pending SIGNAL (no entry taken) for {symbol_name} (ProductType: {product_type}) - will check for fresh pattern today")
+                positions_state[key] = {}  # Clear state for fresh pattern check
             else:
                 # Empty or invalid state - clear it
                 positions_state[key] = {}

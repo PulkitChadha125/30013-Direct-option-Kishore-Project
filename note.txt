@@ -1,0 +1,23 @@
+Req = 30013
+
+TF = 5mins
+Broker = Aliceblue
+Orders = Mis/positional
+
+Green Signal Candle Check Logic:
+Check 1st candle is green
+If not, check next candles one by one to find below candle:
+- Candle is green
+- High < prev candle’s High 
+- Low < prev candle’s Low
+
+Entry
+- Mark signal candle high (say SCH)
+- Entry = SCH + ( √(SCH) × 26.11% )
+
+Exit
+SL = (SCL – ( √(SCL) × 26.11% )).   Exit = All lots
+T1 = Entry Price(EP) + 13.06%.     SL1 = X pts below T1.    Exit = X lots.
+T2 = EP + X %.     SL2 = X pts below T2.     Exit= X lots.
+T3 = EP + X %.     SL3 = X pts below T3.     Exit = X lots.
+T4 = EP + X %.     SL4 = X pts below T4.     Exit = X lots.
