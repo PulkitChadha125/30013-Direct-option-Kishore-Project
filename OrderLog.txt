@@ -1,0 +1,15 @@
+[2025-12-26 18:10:36] 
+================================================================================
+[2025-12-26 18:10:36] [PROJECT START] Trading Strategy Started at 2025-12-26 18:10:36
+[2025-12-26 18:10:36] [STARTUP] Strategy initialized at 2025-12-26 18:10:36.074179
+[2025-12-26 18:10:36] [STARTUP] Loaded 3 symbol(s) from TradeSettings.csv
+[2025-12-26 18:10:36]   - NIFTY25DEC26200CE (ProductType: intraday, Timeframe: 1 min, StartTime: 13:15, StopTime: 22:30)
+[2025-12-26 18:10:36]   - NIFTY25DEC26200PE (ProductType: intraday, Timeframe: 1 min, StartTime: 13:15, StopTime: 22:30)
+[2025-12-26 18:10:36]   - NIFTY25DEC26250PE (ProductType: intraday, Timeframe: 1 min, StartTime: 13:15, StopTime: 22:00)
+[2025-12-26 18:10:36] ================================================================================
+
+[2025-12-26 18:10:36] [STATE] Starting fresh - no previous state loaded
+[2025-12-26 18:10:36] [STATE] Will wait for StartTime and check patterns from there
+[2025-12-26 18:11:01] [FIRST CANDLE] NIFTY25DEC26200CE - Color: RED | Date: 2025-12-26 15:29:00 | O:22.20 H:22.30 L:21.30 C:21.35
+[2025-12-26 18:11:01] [FIRST CANDLE] NIFTY25DEC26200PE - Color: RED | Date: 2025-12-26 15:29:00 | O:162.70 H:163.00 L:162.05 C:162.10
+[2025-12-26 18:11:02] [FIRST CANDLE] NIFTY25DEC26250PE - Color: GREEN | Date: 2025-12-26 15:29:00 | O:205.95 H:206.50 L:205.00 C:206.20

@@ -160,6 +160,10 @@ def get_user_settings():
 
         for index, row in df.iterrows():
             symbol = row['Symbol']
+            
+            # Skip empty rows
+            if pd.isna(symbol) or str(symbol).strip() == '':
+                continue
           
             # Create a unique key per row to support duplicate symbols (e.g., CE and PE rows for NIFTY)
             # Using index to ensure uniqueness even if symbols are duplicated
@@ -185,7 +189,7 @@ def get_user_settings():
                 "T4Percent": float(row['T4Percent']) if pd.notna(row['T4Percent']) else 1.0,
                 "StartTime": str(row['StartTime']) if pd.notna(row['StartTime']) else None,
                 "StopTime": str(row['StopTime']) if pd.notna(row['StopTime']) else None,
-                "ProductType": str(row['ProductType']).lower() if pd.notna(row.get('ProductType', '')) else 'intraday',
+                "ProductType": str(row.get('ProductType', 'intraday')).lower() if pd.notna(row.get('ProductType', '')) else 'intraday',
                 "Market": str(row['Market']) if pd.notna(row.get('Market', '')) else None,
                 "FyresLtp":None,
             }
@@ -355,15 +359,18 @@ def check_signal_for_symbol(unique_key, params, positions_state):
         start_time = params["StartTime"]
         stop_time = params["StopTime"]
         
+        # Initialize position state
+        if unique_key not in positions_state:
+            positions_state[unique_key] = {}
+        pos_state = positions_state[unique_key]
+        
         # Check if we're within trading hours
         if not is_time_between(start_time, stop_time):
             return False
         
         # Check if already in position or signal already detected today (one trade per day)
-        if unique_key in positions_state:
-            pos_state = positions_state[unique_key]
-            if pos_state.get('signal_detected') or pos_state.get('entry_taken') or pos_state.get('exited_today'):
-                return False
+        if pos_state.get('signal_detected') or pos_state.get('entry_taken') or pos_state.get('exited_today'):
+            return False
         
         # Fetch historical data
         check_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -389,6 +396,7 @@ def check_signal_for_symbol(unique_key, params, positions_state):
         
         # Filter out the current/forming candle
         # Get the normalized current time (the forming candle's start time)
+        # Example: At 9:30, the forming candle is 9:30, so we check 9:25 and 9:20 (last 2 completed)
         now = datetime.now(pytz.timezone('Asia/Kolkata'))
         current_normalized_time = normalize_time_to_timeframe(now, timeframe)
         
@@ -401,21 +409,37 @@ def check_signal_for_symbol(unique_key, params, positions_state):
             return False
         
         # Get last 2 completed candles (before the forming candle)
+        # At 9:30, this will be 9:25 (most recent) and 9:20 (previous)
         last_2_candles = df_completed.tail(2)
         
         if len(last_2_candles) < 2:
             print(f"[{symbol}] Not enough candles to check pattern")
             return False
         
-        # Get the two candles: current (9:25) and previous (9:20)
-        current_candle = last_2_candles.iloc[-1]  # Most recent completed candle (9:25)
-        prev_candle = last_2_candles.iloc[-2]     # Previous candle (9:20)
+        # Get the two candles: current (most recent) and previous
+        current_candle = last_2_candles.iloc[-1]  # Most recent completed candle (e.g., 9:25)
+        prev_candle = last_2_candles.iloc[-2]     # Previous candle (e.g., 9:20)
+        
+        # Store last 2 candles info for dashboard (always store, even if no signal)
+        def get_candle_info(candle_row):
+            date_str = str(candle_row['date'])
+            if hasattr(candle_row['date'], 'strftime'):
+                date_str = candle_row['date'].strftime('%Y-%m-%d %H:%M:%S')
+            color = 'GREEN' if candle_row['close'] > candle_row['open'] else 'RED'
+            return {
+                'date': candle_row['date'],
+                'date_str': date_str,
+                'color': color,
+                'open': float(candle_row['open']),
+                'high': float(candle_row['high']),
+                'low': float(candle_row['low']),
+                'close': float(candle_row['close'])
+            }
+        
+        pos_state['last_candle_1'] = get_candle_info(current_candle)  # Most recent (e.g., 9:25)
+        pos_state['last_candle_2'] = get_candle_info(prev_candle)      # Previous (e.g., 9:20)
         
         # Log FIRST CANDLE (current candle being checked) - only once per symbol per day
-        if unique_key not in positions_state:
-            positions_state[unique_key] = {}
-        
-        pos_state = positions_state[unique_key]
         if not pos_state.get('first_candle_logged', False):
             # Determine candle color
             candle_color = 'GREEN' if current_candle['close'] > current_candle['open'] else 'RED'
@@ -620,6 +644,81 @@ def place_sell_order(symbol, quantity, price, product_type="INTRADAY"):
         print(error_msg)
         write_to_order_logs(error_msg)
         return None
+
+def print_dashboard(result_dict, positions_state):
+    """
+    Print a dashboard showing status of all symbols being monitored.
+    Shows: Symbol, Status, Entry Status, Previous 2 candle colors and timestamps.
+    """
+    try:
+        import os
+        os.system('cls' if os.name == 'nt' else 'clear')  # Clear screen
+        
+        current_time = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"\n{'='*120}")
+        print(f"TRADING DASHBOARD - {current_time}")
+        print(f"{'='*120}\n")
+        
+        print(f"{'Symbol':<25} {'Status':<25} {'Entry':<8} {'LTP':<10} {'Candle 1 (Recent)':<35} {'Candle 2 (Previous)':<35}")
+        print(f"{'-'*120}")
+        
+        for unique_key, params in result_dict.items():
+            symbol = params.get('Symbol', 'N/A')
+            ltp = params.get('FyresLtp')
+            ltp_str = f"{ltp:.2f}" if ltp else "N/A"
+            
+            # Get position state
+            pos_state = positions_state.get(unique_key, {})
+            
+            # Determine status
+            if pos_state.get('exited_today'):
+                status = "EXITED TODAY"
+            elif pos_state.get('entry_taken'):
+                direction = pos_state.get('direction', 'BUY')
+                remaining_lots = pos_state.get('remaining_lots', 0)
+                entry_price = pos_state.get('entry_price', pos_state.get('Entry', 0))
+                pnl = (ltp - entry_price) * remaining_lots if ltp and entry_price else 0
+                status = f"IN POSITION ({direction}) - {remaining_lots}L"
+                if pnl != 0:
+                    status += f" P&L: {pnl:+.2f}"
+            elif pos_state.get('signal_detected'):
+                direction = pos_state.get('direction', 'BUY')
+                entry_price = pos_state.get('Entry', 0)
+                status = f"WAITING ENTRY ({direction}) @ {entry_price:.2f}"
+            else:
+                status = "NO SIGNAL"
+            
+            # Entry status
+            entry_status = "YES" if pos_state.get('entry_taken') else "NO"
+            
+            # Get last 2 candles info
+            candle1_info = "N/A"
+            candle2_info = "N/A"
+            
+            candle1 = pos_state.get('last_candle_1')
+            candle2 = pos_state.get('last_candle_2')
+            
+            if candle1:
+                time_str = candle1.get('date_str', 'N/A')
+                if hasattr(candle1.get('date'), 'strftime'):
+                    time_str = candle1['date'].strftime('%H:%M:%S')
+                color = candle1.get('color', 'N/A')
+                candle1_info = f"{time_str} ({color})"
+            
+            if candle2:
+                time_str = candle2.get('date_str', 'N/A')
+                if hasattr(candle2.get('date'), 'strftime'):
+                    time_str = candle2['date'].strftime('%H:%M:%S')
+                color = candle2.get('color', 'N/A')
+                candle2_info = f"{time_str} ({color})"
+            
+            print(f"{symbol:<25} {status:<25} {entry_status:<8} {ltp_str:<10} {candle1_info:<35} {candle2_info:<35}")
+        
+        print(f"{'-'*120}\n")
+        
+    except Exception as e:
+        print(f"Error printing dashboard: {e}")
+        traceback.print_exc()
 
 def monitor_entry_exit(unique_key, params, positions_state):
     """
@@ -996,6 +1095,15 @@ def main_strategy():
         # This includes checking StopTime for position closing
         for unique_key, params in result_dict.items():
             monitor_entry_exit(unique_key, params, positions_state)
+        
+        # Print dashboard every 5 seconds
+        if not hasattr(main_strategy, 'last_dashboard_time'):
+            main_strategy.last_dashboard_time = now
+        
+        time_since_last_dashboard = (now - main_strategy.last_dashboard_time).total_seconds()
+        if time_since_last_dashboard >= 5:  # Update dashboard every 5 seconds
+            print_dashboard(result_dict, positions_state)
+            main_strategy.last_dashboard_time = now
                
     except Exception as e:
         print("Error in main strategy:", str(e))
@@ -1047,35 +1155,13 @@ if __name__ == "__main__":
         write_to_order_logs(f"  - {params['Symbol']} (ProductType: {product_type}, Timeframe: {timeframe} min, StartTime: {start_time}, StopTime: {stop_time})")
     write_to_order_logs(f"{'='*80}\n")
     
-    # Load state - for position tracking
+    # Initialize state - start fresh every time
     global positions_state
-    loaded_state, state_date = load_state()
-    positions_state = loaded_state
-    today = datetime.now().date().isoformat()
-    
-    if state_date != today and state_date is not None:
-        print(f"\n[STATE] Previous day detected: {state_date} | Today: {today}")
-        print("[STATE] Resetting state for new trading day")
-        write_to_order_logs(f"[STATE] Previous day detected: {state_date} | Today: {today}")
-        write_to_order_logs("[STATE] Resetting state for new trading day")
-        # Clear all positions for new day (one trade per day strategy)
-        positions_state = {}
-        save_state(positions_state)
-    elif state_date == today:
-        print(f"[STATE] Loading state from today: {today}")
-        write_to_order_logs(f"[STATE] Loading state from today: {today}")
-        # Check if any signals/positions exist
-        active_positions = [k for k, v in positions_state.items() if v.get('signal_detected') or v.get('entry_taken')]
-        if active_positions:
-            print(f"[STATE] Found {len(active_positions)} active position(s) to monitor")
-            write_to_order_logs(f"[STATE] Found {len(active_positions)} active position(s) to monitor")
-    else:
-        print("[STATE] No previous state found - starting fresh")
-        print("[STATE] All symbols will check for fresh patterns")
-        print("[STATE] No carry-forward positions - clean start")
-        write_to_order_logs("[STATE] No previous state found - starting fresh")
-        write_to_order_logs("[STATE] All symbols will check for fresh patterns")
-        write_to_order_logs("[STATE] No carry-forward positions - clean start")
+    positions_state = {}
+    print("[STATE] Starting fresh - no previous state loaded")
+    print("[STATE] Will wait for StartTime and check patterns from there")
+    write_to_order_logs("[STATE] Starting fresh - no previous state loaded")
+    write_to_order_logs("[STATE] Will wait for StartTime and check patterns from there")
     
     # Initialize Market Data API
     fyres_websocket(FyerSymbolList)
