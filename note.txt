@@ -1,12 +1,10 @@
-Req = 30013
+Removed 1st green or red candle logic:
 
-TF = 5mins
-Broker = Aliceblue
-Orders = Mis/positional
+For Direct NSE BSE Index options 
 
-Green Signal Candle Check Logic:
-Check 1st candle is green
-If not, check next candles one by one to find below candle:
+Green Candle Signal Pattern Check Logic :
+
+Check next candles one by one to find below pattern signal candle:
 - Candle is green
 - High < prev candle’s High 
 - Low < prev candle’s Low
@@ -15,9 +13,72 @@ Entry
 - Mark signal candle high (say SCH)
 - Entry = SCH + ( √(SCH) × 26.11% )
 
+refer to tradesettingsfile for slpoints and targetpercent values
+
 Exit
-SL = (SCL – ( √(SCL) × 26.11% )).   Exit = All lots
-T1 = Entry Price(EP) + 13.06%.     SL1 = X pts below T1.    Exit = X lots.
-T2 = EP + X %.     SL2 = X pts below T2.     Exit= X lots.
-T3 = EP + X %.     SL3 = X pts below T3.     Exit = X lots.
-T4 = EP + X %.     SL4 = X pts below T4.     Exit = X lots.
+T1 = Entry Price(EP) + X % (13.06%).   Exit X lots
+SL1 → SL1Points below Entry Price   Exit = All lots.
+
+T2 = EP + X %         Exit= X lots.
+SL2 → SL2Points below T1    Exit = All remaining lots
+
+T3 = EP + X %        Exit= X lots.
+SL3 → SL3Points below T2    Exit = All remaining lots
+
+
+T4 = EP + X %     Exit= X lots.
+SL4 → SL4Points below T3    Exit = All remaining lots
+
+
+Partial exits only for target as per given lots number
+Any SL will exit will all outstanding lots and all other Targets and SL gets disabled 
+
+--------------------
+Red Signal Candle Pattern Check Logic:
+
+Check next candles one by one to find below signal pattern candle :
+- Candle is red
+- High > prev candle’s High 
+- Low > prev candle’s Low
+
+Entry
+- Mark signal candle low (say SCH)
+- Entry = SCH - ( √(SCH) × 26.11% )
+
+Exit
+T1 = Entry Price(EP) - T1Percent%.       Exit= X lots.
+SL1 → SL1Points points above Entry Price. Exit = All lots.
+
+T2 = EP - T2Percent %       Exit= X lots.
+SL2 → SL2Points above T1   Exit = All remaining lots
+
+
+T3 = EP - T3Percent %        Exit= X lots.
+SL3 → SL3Points above T2   Exit = All remaining lots
+
+
+T4 = EP -T4Percent %          Exit= X lots.
+SL4 → SL4Points above T3    Exit = All remaining lots
+
+
+Partial exits only for target as per given lots number
+Any SL will exit will all outstanding lots and all other Targets and SL gets disabled
+
+-------------
+
+For 
+Stock, Futures or commodity scrips calculation is as below
+
+Entry:
+
+Instead of squaroot calc
+
+√(SCH), use cube root
+Entry = SCH + (∛(SCH) × 26.11%)
+
+Target:
+T1 = Entry Price(EP) - Y%.       Exit= X lots.
+
+If price less than 2000 = 1% target
+If price 2001 - 5000 = 0.5% target
+If price more than 5000 = 0.25% target

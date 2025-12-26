@@ -882,7 +882,7 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     print(message)
                     write_to_order_logs(message)
                     save_state(positions_state)
-        
+
         elif position_state == 't1_hit':
             # Check SL1 or T2
             if ltp <= sl1:
