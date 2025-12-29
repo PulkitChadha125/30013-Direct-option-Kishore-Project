@@ -1,15 +1,132 @@
-[2025-12-26 18:10:36] 
-================================================================================
-[2025-12-26 18:10:36] [PROJECT START] Trading Strategy Started at 2025-12-26 18:10:36
-[2025-12-26 18:10:36] [STARTUP] Strategy initialized at 2025-12-26 18:10:36.074179
-[2025-12-26 18:10:36] [STARTUP] Loaded 3 symbol(s) from TradeSettings.csv
-[2025-12-26 18:10:36]   - NIFTY25DEC26200CE (ProductType: intraday, Timeframe: 1 min, StartTime: 13:15, StopTime: 22:30)
-[2025-12-26 18:10:36]   - NIFTY25DEC26200PE (ProductType: intraday, Timeframe: 1 min, StartTime: 13:15, StopTime: 22:30)
-[2025-12-26 18:10:36]   - NIFTY25DEC26250PE (ProductType: intraday, Timeframe: 1 min, StartTime: 13:15, StopTime: 22:00)
-[2025-12-26 18:10:36] ================================================================================
 
-[2025-12-26 18:10:36] [STATE] Starting fresh - no previous state loaded
-[2025-12-26 18:10:36] [STATE] Will wait for StartTime and check patterns from there
-[2025-12-26 18:11:01] [FIRST CANDLE] NIFTY25DEC26200CE - Color: RED | Date: 2025-12-26 15:29:00 | O:22.20 H:22.30 L:21.30 C:21.35
-[2025-12-26 18:11:01] [FIRST CANDLE] NIFTY25DEC26200PE - Color: RED | Date: 2025-12-26 15:29:00 | O:162.70 H:163.00 L:162.05 C:162.10
-[2025-12-26 18:11:02] [FIRST CANDLE] NIFTY25DEC26250PE - Color: GREEN | Date: 2025-12-26 15:29:00 | O:205.95 H:206.50 L:205.00 C:206.20
+================================================================================
+[2025-12-29 11:36:12] [PROJECT START] Trading Strategy Started at 2025-12-29 11:36:12
+[2025-12-29 11:36:12] [STARTUP] Strategy initialized at 2025-12-29 11:36:12.629072
+[2025-12-29 11:36:12] [STARTUP] Loaded 5 symbol(s) from TradeSettings.csv
+[2025-12-29 11:36:12]   - NIFTY25DEC26000CE (Market: IO, Timeframe: 1 min, StartTime: 11:40, StopTime: 14:00)
+[2025-12-29 11:36:12]   - NIFTY25DEC26000PE (Market: IO, Timeframe: 1 min, StartTime: 11:40, StopTime: 14:00)
+[2025-12-29 11:36:12]   - NIFTY25DEC26050PE (Market: IO, Timeframe: 1 min, StartTime: 11:40, StopTime: 14:00)
+[2025-12-29 11:36:12]   - NIFTY25DECFUT (Market: UL, Timeframe: 5 min, StartTime: 11:40, StopTime: 14:00)
+[2025-12-29 11:36:12]   - SBIN-EQ (Market: UL, Timeframe: 5 min, StartTime: 11:40, StopTime: 14:00)
+[2025-12-29 11:36:12] ================================================================================
+
+[2025-12-29 11:36:12] [STATE] Starting fresh - no previous state loaded
+[2025-12-29 11:36:12] [STATE] Will wait for StartTime and check patterns from there
+[2025-12-29 11:36:20] [FIRST CANDLE] NIFTY25DEC26000CE - Color: RED | Date: 2025-12-29 11:35:00 | O:47.00 H:47.10 L:46.00 C:46.85
+[2025-12-29 11:36:21] [FIRST CANDLE] NIFTY25DEC26000PE - Color: GREEN | Date: 2025-12-29 11:35:00 | O:57.30 H:58.60 L:57.10 C:57.70
+[2025-12-29 11:36:21] [FIRST CANDLE] NIFTY25DEC26050PE - Color: GREEN | Date: 2025-12-29 11:35:00 | O:88.15 H:90.00 L:88.15 C:88.75
+[2025-12-29 11:36:21] [FIRST CANDLE] NIFTY25DECFUT - Color: RED | Date: 2025-12-29 11:30:00 | O:25988.40 H:25993.50 L:25985.30 C:25987.60
+[2025-12-29 11:36:22] [FIRST CANDLE] SBIN-EQ - Color: GREEN | Date: 2025-12-29 11:30:00 | O:962.95 H:963.60 L:962.50 C:963.10
+[2025-12-29 11:40:03] [SIGNAL DETECTED] NIFTY25DEC26000CE at 2025-12-29 11:40:03.196238
+[2025-12-29 11:40:03]   Signal Candle High (SCH): 46.80
+[2025-12-29 11:40:03]   Signal Candle Low (SCL): 46.25
+[2025-12-29 11:40:03]   Entry Price: 44.47
+[2025-12-29 11:40:03]   Initial Stop Loss: 48.59
+[2025-12-29 11:40:03]   Target 1: 38.43 | SL1: 49.47 | Exit Lots: 75
+[2025-12-29 11:40:03]   Target 2: 38.43 | SL2: 43.43 | Exit Lots: 75
+[2025-12-29 11:40:03]   Target 3: 37.80 | SL3: 43.43 | Exit Lots: 75
+[2025-12-29 11:40:03]   Target 4: 37.36 | SL4: 42.80 | Exit Lots: 75
+[2025-12-29 11:40:03]   Entry Lot Size: 300
+
+[2025-12-29 11:40:03] Last 2 candles (OHLC):
+[2025-12-29 11:40:03]   Date: 2025-12-29 11:38:00, Open: 46.65, High: 46.75, Low: 45.70, Close: 46.30, Volume: 609450
+[2025-12-29 11:40:03]   Date: 2025-12-29 11:39:00, Open: 46.40, High: 46.80, Low: 46.25, Close: 46.30, Volume: 315525
+
+[2025-12-29 11:40:03] [FIRST CANDLE] NIFTY25DEC26000CE - Color: RED | Date: 2025-12-29 11:39:00 | O:46.40 H:46.80 L:46.25 C:46.30
+[2025-12-29 11:45:01] [SIGNAL DETECTED] NIFTY25DEC26050PE at 2025-12-29 11:45:01.781091
+[2025-12-29 11:45:01]   Signal Candle High (SCH): 87.85
+[2025-12-29 11:45:01]   Signal Candle Low (SCL): 85.40
+[2025-12-29 11:45:01]   Entry Price: 90.30
+[2025-12-29 11:45:01]   Initial Stop Loss: 82.99
+[2025-12-29 11:45:01]   Target 1: 102.58 | SL1: 85.30 | Exit Lots: 75
+[2025-12-29 11:45:01]   Target 2: 102.58 | SL2: 97.58 | Exit Lots: 75
+[2025-12-29 11:45:01]   Target 3: 103.84 | SL3: 97.58 | Exit Lots: 75
+[2025-12-29 11:45:01]   Target 4: 104.74 | SL4: 98.84 | Exit Lots: 75
+[2025-12-29 11:45:01]   Entry Lot Size: 300
+
+[2025-12-29 11:45:01] Last 2 candles (OHLC):
+[2025-12-29 11:45:01]   Date: 2025-12-29 11:43:00, Open: 88.00, High: 88.10, Low: 86.25, Close: 86.35, Volume: 298350
+[2025-12-29 11:45:01]   Date: 2025-12-29 11:44:00, Open: 86.30, High: 87.85, Low: 85.40, Close: 86.50, Volume: 447225
+
+[2025-12-29 11:45:09] [FIRST CANDLE] NIFTY25DEC26050PE - Color: GREEN | Date: 2025-12-29 11:44:00 | O:86.30 H:87.85 L:85.40 C:86.50
+[2025-12-29 11:59:01] [SIGNAL DETECTED] NIFTY25DEC26000PE at 2025-12-29 11:59:01.304413
+[2025-12-29 11:59:01]   Signal Candle High (SCH): 55.20
+[2025-12-29 11:59:01]   Signal Candle Low (SCL): 53.60
+[2025-12-29 11:59:01]   Entry Price: 51.69
+[2025-12-29 11:59:01]   Initial Stop Loss: 57.14
+[2025-12-29 11:59:01]   Target 1: 44.66 | SL1: 56.69 | Exit Lots: 75
+[2025-12-29 11:59:01]   Target 2: 44.66 | SL2: 49.66 | Exit Lots: 75
+[2025-12-29 11:59:01]   Target 3: 43.94 | SL3: 49.66 | Exit Lots: 75
+[2025-12-29 11:59:01]   Target 4: 43.42 | SL4: 48.94 | Exit Lots: 75
+[2025-12-29 11:59:01]   Entry Lot Size: 300
+
+[2025-12-29 11:59:01] Last 2 candles (OHLC):
+[2025-12-29 11:59:01]   Date: 2025-12-29 11:57:00, Open: 53.30, High: 55.10, Low: 53.20, Close: 54.75, Volume: 2328525
+[2025-12-29 11:59:01]   Date: 2025-12-29 11:58:00, Open: 54.90, High: 55.20, Low: 53.60, Close: 53.60, Volume: 1172025
+
+[2025-12-29 11:59:03] [FIRST CANDLE] NIFTY25DEC26000PE - Color: RED | Date: 2025-12-29 11:58:00 | O:54.90 H:55.20 L:53.60 C:53.60
+[2025-12-29 12:09:56] [SELL ORDER] 2025-12-29 12:09:56.596632 - Symbol: NSE:NIFTY25DEC26000PE, Qty: 300, Price: 51.55, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 8,63,302.80 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900172074'}
+[2025-12-29 12:09:56] [ENTRY PRICE REACHED] NIFTY25DEC26000PE - SELL at 2025-12-29 12:09:56.596632
+[2025-12-29 12:09:56]   Entry Price: 51.55
+[2025-12-29 12:09:56]   Taking SELL position with 300 lots
+
+[2025-12-29 12:23:19] [SELL ORDER] 2025-12-29 12:23:19.885268 - Symbol: NSE:NIFTY25DEC26000CE, Qty: 300, Price: 44.45, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 8,85,322.80 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900180210'}
+[2025-12-29 12:23:19] [ENTRY PRICE REACHED] NIFTY25DEC26000CE - SELL at 2025-12-29 12:23:19.885268
+[2025-12-29 12:23:19]   Entry Price: 44.45
+[2025-12-29 12:23:19]   Taking SELL position with 300 lots
+
+[2025-12-29 12:23:24] [BUY ORDER] 2025-12-29 12:23:24.384932 - Symbol: NSE:NIFTY25DEC26000PE, Qty: 300, Price: 57.25, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 17,180.00 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900180320'}
+[2025-12-29 12:23:24] [EXIT - SL1] NIFTY25DEC26000PE at 57.25, Lots: 300. All positions closed.
+[2025-12-29 12:23:26] [BUY ORDER] 2025-12-29 12:23:26.828672 - Symbol: NSE:NIFTY25DEC26050PE, Qty: 300, Price: 90.7, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 27,275.00 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900180411'}
+[2025-12-29 12:23:26] [ENTRY PRICE REACHED] NIFTY25DEC26050PE - BUY at 2025-12-29 12:23:26.829673
+[2025-12-29 12:23:26]   Entry Price: 90.70
+[2025-12-29 12:23:26]   Taking BUY position with 300 lots
+
+[2025-12-29 12:30:00] [SIGNAL DETECTED] NIFTY25DECFUT at 2025-12-29 12:30:00.382211
+[2025-12-29 12:30:00]   Signal Candle High (SCH): 25985.00
+[2025-12-29 12:30:00]   Signal Candle Low (SCL): 25979.70
+[2025-12-29 12:30:00]   Entry Price: 25992.73
+[2025-12-29 12:30:00]   Initial Stop Loss: 25971.97
+[2025-12-29 12:30:00]   Target 1: 26512.59 | SL1: 25942.73 | Exit Lots: 75
+[2025-12-29 12:30:00]   Target 2: 26772.52 | SL2: 26462.59 | Exit Lots: 75
+[2025-12-29 12:30:00]   Target 3: 27032.44 | SL3: 26722.52 | Exit Lots: 75
+[2025-12-29 12:30:00]   Target 4: 27292.37 | SL4: 26982.44 | Exit Lots: 75
+[2025-12-29 12:30:00]   Entry Lot Size: 300
+
+[2025-12-29 12:30:00] Last 2 candles (OHLC):
+[2025-12-29 12:30:00]   Date: 2025-12-29 12:20:00, Open: 25998.00, High: 25998.00, Low: 25980.00, Close: 25982.00, Volume: 107550
+[2025-12-29 12:30:00]   Date: 2025-12-29 12:25:00, Open: 25982.30, High: 25985.00, Low: 25979.70, Close: 25983.50, Volume: 44325
+
+[2025-12-29 12:30:09] [FIRST CANDLE] NIFTY25DECFUT - Color: GREEN | Date: 2025-12-29 12:25:00 | O:25982.30 H:25985.00 L:25979.70 C:25983.50
+[2025-12-29 12:34:37] [BUY ORDER] 2025-12-29 12:34:37.778176 - Symbol: NSE:NIFTY25DEC26000CE, Qty: 75, Price: 38.05, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,873.75 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900188772'}
+[2025-12-29 12:34:37] [T1 HIT] NIFTY25DEC26000CE at 38.05, Exited: 75 lots, Remaining: 225
+[2025-12-29 12:34:40] [BUY ORDER] 2025-12-29 12:34:40.723439 - Symbol: NSE:NIFTY25DEC26000CE, Qty: 75, Price: 38.05, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,918.75 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900188900'}
+[2025-12-29 12:34:40] [T2 HIT] NIFTY25DEC26000CE at 38.05, Exited: 75 lots, Remaining: 150
+[2025-12-29 12:34:50] [BUY ORDER] 2025-12-29 12:34:50.627662 - Symbol: NSE:NIFTY25DEC26000CE, Qty: 75, Price: 37.35, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,828.75 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900189220'}
+[2025-12-29 12:34:50] [T3 HIT] NIFTY25DEC26000CE at 37.35, Exited: 75 lots, Remaining: 75
+[2025-12-29 12:34:52] [BUY ORDER] 2025-12-29 12:34:52.098944 - Symbol: NSE:NIFTY25DEC26000CE, Qty: 75, Price: 37.3, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,821.25 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900189263'}
+[2025-12-29 12:34:52] [T4 HIT] NIFTY25DEC26000CE at 37.30, Exited ALL 75 lots. All positions closed.
+[2025-12-29 13:05:02] [SIGNAL DETECTED] SBIN-EQ at 2025-12-29 13:05:02.882817
+[2025-12-29 13:05:02]   Signal Candle High (SCH): 964.60
+[2025-12-29 13:05:02]   Signal Candle Low (SCL): 964.10
+[2025-12-29 13:05:02]   Entry Price: 961.52
+[2025-12-29 13:05:02]   Initial Stop Loss: 967.18
+[2025-12-29 13:05:02]   Target 1: 942.29 | SL1: 971.52 | Exit Lots: 1
+[2025-12-29 13:05:02]   Target 2: 932.68 | SL2: 952.29 | Exit Lots: 1
+[2025-12-29 13:05:02]   Target 3: 923.06 | SL3: 942.68 | Exit Lots: 1
+[2025-12-29 13:05:02]   Target 4: 913.44 | SL4: 933.06 | Exit Lots: 1
+[2025-12-29 13:05:02]   Entry Lot Size: 4
+
+[2025-12-29 13:05:02] Last 2 candles (OHLC):
+[2025-12-29 13:05:02]   Date: 2025-12-29 12:55:00, Open: 964.30, High: 964.50, Low: 963.55, Close: 964.35, Volume: 63258
+[2025-12-29 13:05:02]   Date: 2025-12-29 13:00:00, Open: 964.45, High: 964.60, Low: 964.10, Close: 964.35, Volume: 27793
+
+[2025-12-29 13:05:11] [FIRST CANDLE] SBIN-EQ - Color: RED | Date: 2025-12-29 13:00:00 | O:964.45 H:964.60 L:964.10 C:964.35
+[2025-12-29 13:14:50] [SELL ORDER] 2025-12-29 13:14:50.698470 - Symbol: NSE:NIFTY25DEC26050PE, Qty: 75, Price: 103.15, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,21,880.20 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900210489'}
+[2025-12-29 13:14:50] [T1 HIT] NIFTY25DEC26050PE at 103.15, Exited: 75 lots, Remaining: 225
+[2025-12-29 13:14:52] [SELL ORDER] 2025-12-29 13:14:52.102239 - Symbol: NSE:NIFTY25DEC26050PE, Qty: 75, Price: 103.2, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,21,880.20 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900210535'}
+[2025-12-29 13:14:52] [T2 HIT] NIFTY25DEC26050PE at 103.20, Exited: 75 lots, Remaining: 150
+[2025-12-29 13:16:43] [SELL ORDER] 2025-12-29 13:16:43.632642 - Symbol: NSE:NIFTY25DEC26050PE, Qty: 75, Price: 104.4, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,21,880.20 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900213291'}
+[2025-12-29 13:16:43] [T3 HIT] NIFTY25DEC26050PE at 104.40, Exited: 75 lots, Remaining: 75
+[2025-12-29 13:16:54] [SELL ORDER] 2025-12-29 13:16:54.377036 - Symbol: NSE:NIFTY25DEC26050PE, Qty: 75, Price: 106.45, ProductType: INTRADAY, Response: {'code': -99, 'message': 'RED:Margin Shortfall:INR 2,21,880.20 Available:INR 0.00 for C-XB00110 [FYERS_RISK_CUG]', 's': 'error', 'id': '25122900213592'}
+[2025-12-29 13:16:54] [T4 HIT] NIFTY25DEC26050PE at 106.45, Exited ALL 75 lots. All positions closed.

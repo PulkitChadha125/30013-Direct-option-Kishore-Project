@@ -6,4 +6,6 @@ pytz
 numpy
 polars
 polars-talib
-setuptools
+urllib3
+setuptools 
+pyinstaller

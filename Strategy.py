@@ -1,3 +1,7 @@
+expierdate="2026-12-29"
+message="Project validity expiered please contact admin"
+
+
 import pandas as pd
 from datetime import datetime, timedelta, time as dt_time
 import polars as pl
@@ -84,40 +88,8 @@ def write_to_order_logs(message):
             timestamp = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
             file.write(f"[{timestamp}] {message}\n")
 
-def load_state():
-    """Load state from state.json file - returns positions even if from different day"""
-    try:
-        with open('state.json', 'r') as f:
-            content = f.read().strip()
-            # Check if file is empty
-            if not content:
-                print("[STATE] state.json is empty - starting fresh")
-                return {}, None
-            state = json.loads(content)
-            return state.get('positions', {}), state.get('date')
-    except FileNotFoundError:
-        print("[STATE] state.json not found - starting fresh")
-        return {}, None
-    except json.JSONDecodeError as e:
-        print(f"[STATE] Error parsing state.json (invalid JSON): {e}")
-        print("[STATE] Starting fresh - consider backing up or fixing state.json if needed")
-        return {}, None
-    except Exception as e:
-        print(f"[STATE] Error loading state: {e}")
-        print("[STATE] Starting fresh")
-        return {}, None
-
-def save_state(positions_state):
-    """Save state to state.json file"""
-    try:
-        state = {
-            'date': datetime.now().date().isoformat(),
-            'positions': positions_state
-        }
-        with open('state.json', 'w') as f:
-            json.dump(state, f, indent=2, default=str)
-    except Exception as e:
-        print(f"Error saving state: {e}")
+# State.json removed - intraday mode, fresh start each day
+# No need to save/load state since we start fresh every day
 
 def is_time_between(start_time_str, stop_time_str, current_time=None):
     """Check if current time is between start_time and stop_time"""
@@ -189,7 +161,6 @@ def get_user_settings():
                 "T4Percent": float(row['T4Percent']) if pd.notna(row['T4Percent']) else 1.0,
                 "StartTime": str(row['StartTime']) if pd.notna(row['StartTime']) else None,
                 "StopTime": str(row['StopTime']) if pd.notna(row['StopTime']) else None,
-                "ProductType": str(row.get('ProductType', 'intraday')).lower() if pd.notna(row.get('ProductType', '')) else 'intraday',
                 "Market": str(row['Market']) if pd.notna(row.get('Market', '')) else None,
                 "FyresLtp":None,
             }
@@ -346,6 +317,85 @@ def calculate_levels(entry_price, direction, t1_percent, t2_percent, t3_percent,
         'SL4': sl4
     }
 
+def update_candle_data_for_dashboard(unique_key, params, positions_state):
+    """
+    Fetch and store the last 2 completed candles for dashboard display.
+    This runs for all symbols regardless of StartTime to keep dashboard updated.
+    """
+    try:
+        from FyresIntegration import fetchOHLC
+        
+        symbol = params["FyresSymbol"]
+        timeframe = params["Timeframe"]
+        
+        # Initialize position state if needed
+        if unique_key not in positions_state:
+            positions_state[unique_key] = {}
+        pos_state = positions_state[unique_key]
+        
+        # Fetch historical data
+        df = fetchOHLC(symbol, timeframe)
+        
+        if len(df) < 2:
+            return
+        
+        # Filter out the current/forming candle
+        now = datetime.now(pytz.timezone('Asia/Kolkata'))
+        current_normalized_time = normalize_time_to_timeframe(now, timeframe)
+        
+        # Filter dataframe to exclude candles at or after the current normalized time
+        df_completed = df[df['date'] < current_normalized_time].copy()
+        
+        if len(df_completed) < 2:
+            return
+        
+        # Get last 2 completed candles
+        last_2_candles = df_completed.tail(2)
+        
+        if len(last_2_candles) < 2:
+            return
+        
+        # Get the two candles: current (most recent) and previous
+        current_candle = last_2_candles.iloc[-1]  # Most recent completed candle
+        prev_candle = last_2_candles.iloc[-2]     # Previous candle
+        
+        # Store last 2 candles info for dashboard
+        def get_candle_info(candle_row):
+            date_str = str(candle_row['date'])
+            if hasattr(candle_row['date'], 'strftime'):
+                date_str = candle_row['date'].strftime('%Y-%m-%d %H:%M:%S')
+            color = 'GREEN' if candle_row['close'] > candle_row['open'] else 'RED'
+            return {
+                'date': candle_row['date'],
+                'date_str': date_str,
+                'color': color,
+                'open': float(candle_row['open']),
+                'high': float(candle_row['high']),
+                'low': float(candle_row['low']),
+                'close': float(candle_row['close'])
+            }
+        
+        pos_state['last_candle_1'] = get_candle_info(current_candle)  # Most recent
+        pos_state['last_candle_2'] = get_candle_info(prev_candle)      # Previous
+        
+        # Log FIRST CANDLE if not logged yet (for dashboard updates)
+        if not pos_state.get('first_candle_logged', False):
+            candle_color = 'GREEN' if current_candle['close'] > current_candle['open'] else 'RED'
+            candle_date_str = str(current_candle['date'])
+            if hasattr(current_candle['date'], 'strftime'):
+                candle_date_str = current_candle['date'].strftime('%Y-%m-%d %H:%M:%S')
+            
+            first_candle_log = f"[FIRST CANDLE] {params.get('Symbol', 'unknown')} - Color: {candle_color} | Date: {candle_date_str} | O:{current_candle['open']:.2f} H:{current_candle['high']:.2f} L:{current_candle['low']:.2f} C:{current_candle['close']:.2f}"
+            print(first_candle_log)
+            write_to_order_logs(first_candle_log)
+            pos_state['first_candle_logged'] = True
+        
+    except Exception as e:
+        # Log error but don't spam - only log once per symbol
+        if not pos_state.get('candle_update_error_logged', False):
+            print(f"[CANDLE UPDATE ERROR] {params.get('Symbol', 'unknown')}: {str(e)}")
+            pos_state['candle_update_error_logged'] = True
+
 def check_signal_for_symbol(unique_key, params, positions_state):
     """
     Check for signal candle pattern for a symbol by examining the previous two completed candles.
@@ -378,12 +428,17 @@ def check_signal_for_symbol(unique_key, params, positions_state):
         df = fetchOHLC(symbol, timeframe)
         
         # Save historical data to CSV file inside ./data folder
+        # Use the actual symbol name from params (not FyresSymbol which has NSE: prefix)
         try:
-            sanitized_symbol = sanitize_symbol_for_filename(symbol)
+            actual_symbol = params.get('Symbol', symbol)
+            # Remove exchange prefix if present (e.g., "NSE:SYMBOL" -> "SYMBOL")
+            if ':' in actual_symbol:
+                actual_symbol = actual_symbol.split(':')[-1]
+            
             base_dir = os.path.dirname(os.path.abspath(__file__))
             data_dir = os.path.join(base_dir, "data")
             os.makedirs(data_dir, exist_ok=True)
-            csv_filename = os.path.join(data_dir, f"{sanitized_symbol}.csv")
+            csv_filename = os.path.join(data_dir, f"{actual_symbol}.csv")
             # Using overwrite mode to keep latest snapshot of historical data
             df.to_csv(csv_filename, index=False)
             print(f"[{symbol}] Historical data saved to {csv_filename}")
@@ -451,7 +506,6 @@ def check_signal_for_symbol(unique_key, params, positions_state):
             print(first_candle_log)
             write_to_order_logs(first_candle_log)
             pos_state['first_candle_logged'] = True
-            save_state(positions_state)
         
         # Print the two candles being checked (OHLC)
         print(f"[{symbol}] Checking previous 2 completed candles (checked at {check_timestamp}, excluding forming candle at {current_normalized_time.strftime('%H:%M:%S')}):")
@@ -606,8 +660,6 @@ def check_signal_for_symbol(unique_key, params, positions_state):
         print(f"  T1: {levels['T1']:.2f}, T2: {levels['T2']:.2f}, T3: {levels['T3']:.2f}, T4: {levels['T4']:.2f}")
         print(f"  SL1: {levels['SL1']:.2f}, SL2: {levels['SL2']:.2f}, SL3: {levels['SL3']:.2f}, SL4: {levels['SL4']:.2f}")
         
-        save_state(positions_state)
-        
         return True
         
     except Exception as e:
@@ -647,51 +699,57 @@ def place_sell_order(symbol, quantity, price, product_type="INTRADAY"):
 
 def print_dashboard(result_dict, positions_state):
     """
-    Print a dashboard showing status of all symbols being monitored.
-    Shows: Symbol, Status, Entry Status, Previous 2 candle colors and timestamps.
+    Print a compact dashboard showing status of all symbols being monitored.
     """
     try:
         import os
         os.system('cls' if os.name == 'nt' else 'clear')  # Clear screen
         
-        current_time = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
-        print(f"\n{'='*120}")
+        current_time = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%H:%M:%S')
+        print(f"\n{'='*85}")
         print(f"TRADING DASHBOARD - {current_time}")
-        print(f"{'='*120}\n")
+        print(f"{'='*85}")
         
-        print(f"{'Symbol':<25} {'Status':<25} {'Entry':<8} {'LTP':<10} {'Candle 1 (Recent)':<35} {'Candle 2 (Previous)':<35}")
-        print(f"{'-'*120}")
+        # Compact header
+        print(f"{'Symbol':<18} {'Status':<20} {'LTP':<10} {'C1':<8} {'C2':<8}")
+        print(f"{'-'*85}")
         
         for unique_key, params in result_dict.items():
             symbol = params.get('Symbol', 'N/A')
+            # Truncate long symbol names
+            if len(symbol) > 17:
+                symbol = symbol[:14] + "..."
+            
             ltp = params.get('FyresLtp')
             ltp_str = f"{ltp:.2f}" if ltp else "N/A"
             
             # Get position state
             pos_state = positions_state.get(unique_key, {})
             
-            # Determine status
+            # Determine status (compact)
             if pos_state.get('exited_today'):
-                status = "EXITED TODAY"
+                status = "EXITED"
             elif pos_state.get('entry_taken'):
                 direction = pos_state.get('direction', 'BUY')
                 remaining_lots = pos_state.get('remaining_lots', 0)
                 entry_price = pos_state.get('entry_price', pos_state.get('Entry', 0))
                 pnl = (ltp - entry_price) * remaining_lots if ltp and entry_price else 0
-                status = f"IN POSITION ({direction}) - {remaining_lots}L"
                 if pnl != 0:
-                    status += f" P&L: {pnl:+.2f}"
+                    status = f"{direction} {remaining_lots}L P&L:{pnl:+.0f}"
+                else:
+                    status = f"{direction} {remaining_lots}L"
             elif pos_state.get('signal_detected'):
                 direction = pos_state.get('direction', 'BUY')
                 entry_price = pos_state.get('Entry', 0)
-                status = f"WAITING ENTRY ({direction}) @ {entry_price:.2f}"
+                status = f"WAIT {direction}@{entry_price:.1f}"
             else:
                 status = "NO SIGNAL"
             
-            # Entry status
-            entry_status = "YES" if pos_state.get('entry_taken') else "NO"
+            # Truncate status if too long
+            if len(status) > 19:
+                status = status[:16] + "..."
             
-            # Get last 2 candles info
+            # Get last 2 candles info (compact: just time and G/R)
             candle1_info = "N/A"
             candle2_info = "N/A"
             
@@ -701,20 +759,20 @@ def print_dashboard(result_dict, positions_state):
             if candle1:
                 time_str = candle1.get('date_str', 'N/A')
                 if hasattr(candle1.get('date'), 'strftime'):
-                    time_str = candle1['date'].strftime('%H:%M:%S')
-                color = candle1.get('color', 'N/A')
-                candle1_info = f"{time_str} ({color})"
+                    time_str = candle1['date'].strftime('%H:%M')
+                color = 'G' if candle1.get('color') == 'GREEN' else 'R' if candle1.get('color') == 'RED' else '?'
+                candle1_info = f"{time_str} {color}"
             
             if candle2:
                 time_str = candle2.get('date_str', 'N/A')
                 if hasattr(candle2.get('date'), 'strftime'):
-                    time_str = candle2['date'].strftime('%H:%M:%S')
-                color = candle2.get('color', 'N/A')
-                candle2_info = f"{time_str} ({color})"
+                    time_str = candle2['date'].strftime('%H:%M')
+                color = 'G' if candle2.get('color') == 'GREEN' else 'R' if candle2.get('color') == 'RED' else '?'
+                candle2_info = f"{time_str} {color}"
             
-            print(f"{symbol:<25} {status:<25} {entry_status:<8} {ltp_str:<10} {candle1_info:<35} {candle2_info:<35}")
+            print(f"{symbol:<18} {status:<20} {ltp_str:<10} {candle1_info:<8} {candle2_info:<8}")
         
-        print(f"{'-'*120}\n")
+        print(f"{'-'*85}\n")
         
     except Exception as e:
         print(f"Error printing dashboard: {e}")
@@ -749,14 +807,16 @@ def monitor_entry_exit(unique_key, params, positions_state):
         current_time_obj = current_time.time()
         
         # Check if current time has reached or passed StopTime
-        if stop_time and pos_state.get('entry_taken'):
+        # In intraday mode, close all open positions at StopTime
+        if stop_time:
             try:
                 stop_hour, stop_min = map(int, stop_time.split(':'))
                 stop_time_obj = dt_time(stop_hour, stop_min)
                 
-                # If current time >= StopTime, square off all positions
+                # If current time >= StopTime
                 if current_time_obj >= stop_time_obj:
-                    if not pos_state.get('squared_off_at_stoptime', False):
+                    # If position is open (entry taken), close it
+                    if pos_state.get('entry_taken') and not pos_state.get('squared_off_at_stoptime', False):
                         remaining_lots = pos_state.get('remaining_lots', 0)
                         if remaining_lots > 0:
                             direction = pos_state.get('direction', 'BUY')
@@ -773,8 +833,15 @@ def monitor_entry_exit(unique_key, params, positions_state):
                             message = f"[SQUARE OFF - StopTime] {params['Symbol']} at {ltp:.2f}, Lots: {remaining_lots} (Intraday)"
                             print(message)
                             write_to_order_logs(message)
-                            save_state(positions_state)
                             return
+                    # If signal detected but entry not taken, mark as expired at StopTime
+                    elif pos_state.get('signal_detected') and not pos_state.get('entry_taken') and not pos_state.get('exited_today'):
+                        pos_state['exited_today'] = True
+                        pos_state['position_state'] = 'expired_stoptime'
+                        message = f"[SIGNAL EXPIRED - StopTime] {params['Symbol']} - Signal detected but entry not taken. Marked as expired at StopTime."
+                        print(message)
+                        write_to_order_logs(message)
+                        return
             except Exception as e:
                 print(f"Error checking StopTime for {params.get('Symbol', 'unknown')}: {e}")
         
@@ -846,7 +913,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                         write_to_order_logs("")
                         
                         print(f"[ENTRY TAKEN] {params['Symbol']} - {direction} at {ltp:.2f}, Lots: {entry_lots}")
-                        save_state(positions_state)
         
         # Exit Logic (only if entry is taken)
         if not pos_state.get('entry_taken'):
@@ -886,7 +952,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[EXIT - SL1] {params['Symbol']} at {ltp:.2f}, Lots: {remaining_lots}. All positions closed."
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
                     return
             
             # Check T1
@@ -904,7 +969,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[T1 HIT] {params['Symbol']} at {ltp:.2f}, Exited: {tgt1_lots} lots, Remaining: {pos_state['remaining_lots']}"
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
 
         elif position_state == 't1_hit':
             # Check SL2 or T2
@@ -922,7 +986,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[EXIT - SL2] {params['Symbol']} at {ltp:.2f}, Lots: {remaining_lots}. All positions closed."
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
                     return
             elif (direction == 'BUY' and ltp >= t2) or (direction == 'SELL' and ltp <= t2):
                 tgt2_lots = params.get("Tgt2Lots", 0)
@@ -938,7 +1001,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[T2 HIT] {params['Symbol']} at {ltp:.2f}, Exited: {tgt2_lots} lots, Remaining: {pos_state['remaining_lots']}"
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
 
         elif position_state == 't2_hit':
             # Check SL3 or T3
@@ -956,7 +1018,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[EXIT - SL3] {params['Symbol']} at {ltp:.2f}, Lots: {remaining_lots}. All positions closed."
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
                     return
             elif (direction == 'BUY' and ltp >= t3) or (direction == 'SELL' and ltp <= t3):
                 tgt3_lots = params.get("Tgt3Lots", 0)
@@ -972,7 +1033,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[T3 HIT] {params['Symbol']} at {ltp:.2f}, Exited: {tgt3_lots} lots, Remaining: {pos_state['remaining_lots']}"
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
 
         elif position_state == 't3_hit':
             # Check SL4 or T4
@@ -990,7 +1050,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[EXIT - SL4] {params['Symbol']} at {ltp:.2f}, Lots: {remaining_lots}. All positions closed."
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
                     return
             elif (direction == 'BUY' and ltp >= t4) or (direction == 'SELL' and ltp <= t4):
                 # T4 hit - exit ALL remaining lots
@@ -1007,7 +1066,6 @@ def monitor_entry_exit(unique_key, params, positions_state):
                     message = f"[T4 HIT] {params['Symbol']} at {ltp:.2f}, Exited ALL {remaining_lots} lots. All positions closed."
                     print(message)
                     write_to_order_logs(message)
-                    save_state(positions_state)
                     return
     
     except Exception as e:
@@ -1067,7 +1125,6 @@ def main_strategy():
                     next_check_time = normalized_time + timedelta(minutes=timeframe)
                 
                 pos_state['next_check_time'] = next_check_time.isoformat()
-                save_state(positions_state)
             
             # Convert string back to datetime
             if isinstance(next_check_time, str):
@@ -1082,19 +1139,45 @@ def main_strategy():
                 start_time = params.get("StartTime")
                 stop_time = params.get("StopTime")
                 if is_time_between(start_time, stop_time):
-                    # Check for signal
+                    # Check for signal (this also updates candle data)
                     signal_detected = check_signal_for_symbol(unique_key, params, positions_state)
+                else:
+                    # Even if not in trading hours, update candle data for dashboard
+                    update_candle_data_for_dashboard(unique_key, params, positions_state)
                 
                 # Update next check time to next timeframe interval
                 normalized_time = normalize_time_to_timeframe(now, timeframe)
                 next_check_time = normalized_time + timedelta(minutes=timeframe)
                 pos_state['next_check_time'] = next_check_time.isoformat()
-                save_state(positions_state)
+            
+            # Also update candle data immediately when StartTime is reached (even if not time for signal check yet)
+            start_time = params.get("StartTime")
+            if start_time:
+                try:
+                    start_hour, start_min = map(int, start_time.split(':'))
+                    today = now.date()
+                    start_datetime = pytz.timezone('Asia/Kolkata').localize(datetime.combine(today, dt_time(start_hour, start_min)))
+                    # If StartTime was just reached (within last 5 seconds), update candle data
+                    time_since_start = (now - start_datetime).total_seconds()
+                    if 0 <= time_since_start <= 5:
+                        update_candle_data_for_dashboard(unique_key, params, positions_state)
+                except:
+                    pass
         
         # Phase 2: Monitor entry/exit for all symbols (runs every second)
         # This includes checking StopTime for position closing
         for unique_key, params in result_dict.items():
             monitor_entry_exit(unique_key, params, positions_state)
+        
+        # Update candle data for dashboard every 10 seconds (for all symbols)
+        if not hasattr(main_strategy, 'last_candle_update_time'):
+            main_strategy.last_candle_update_time = now - timedelta(seconds=11)  # Force immediate update on first run
+        
+        time_since_last_candle_update = (now - main_strategy.last_candle_update_time).total_seconds()
+        if time_since_last_candle_update >= 10:  # Update candle data every 10 seconds
+            for unique_key, params in result_dict.items():
+                update_candle_data_for_dashboard(unique_key, params, positions_state)
+            main_strategy.last_candle_update_time = now
         
         # Print dashboard every 5 seconds
         if not hasattr(main_strategy, 'last_dashboard_time'):
@@ -1136,11 +1219,11 @@ if __name__ == "__main__":
     print(f"[STARTUP] Strategy initialized at {startup_time}")
     print(f"[STARTUP] Loaded {len(result_dict)} symbol(s) from TradeSettings.csv")
     for unique_key, params in result_dict.items():
-        product_type = params.get('ProductType', 'intraday')
         timeframe = params.get('Timeframe', 'N/A')
         start_time = params.get('StartTime', 'N/A')
         stop_time = params.get('StopTime', 'N/A')
-        print(f"  - {params['Symbol']} (ProductType: {product_type}, Timeframe: {timeframe} min, StartTime: {start_time}, StopTime: {stop_time})")
+        market = params.get('Market', 'N/A')
+        print(f"  - {params['Symbol']} (Market: {market}, Timeframe: {timeframe} min, StartTime: {start_time}, StopTime: {stop_time})")
     print(f"{'='*80}\n")
     
     write_to_order_logs(f"\n{'='*80}")
@@ -1148,11 +1231,11 @@ if __name__ == "__main__":
     write_to_order_logs(f"[STARTUP] Strategy initialized at {startup_time}")
     write_to_order_logs(f"[STARTUP] Loaded {len(result_dict)} symbol(s) from TradeSettings.csv")
     for unique_key, params in result_dict.items():
-        product_type = params.get('ProductType', 'intraday')
         timeframe = params.get('Timeframe', 'N/A')
         start_time = params.get('StartTime', 'N/A')
         stop_time = params.get('StopTime', 'N/A')
-        write_to_order_logs(f"  - {params['Symbol']} (ProductType: {product_type}, Timeframe: {timeframe} min, StartTime: {start_time}, StopTime: {stop_time})")
+        market = params.get('Market', 'N/A')
+        write_to_order_logs(f"  - {params['Symbol']} (Market: {market}, Timeframe: {timeframe} min, StartTime: {start_time}, StopTime: {stop_time})")
     write_to_order_logs(f"{'='*80}\n")
     
     # Initialize state - start fresh every time

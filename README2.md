@@ -23,8 +23,9 @@ This is an automated trading strategy that detects buy/sell signals based on can
 - Loads trading settings from `TradeSettings.csv`
 - Authenticates with Fyers API
 - Initializes WebSocket for real-time market data (LTP)
-- Loads previous state from `state.json` (if exists)
-- Resets state for new trading day
+- **Starts fresh every time** - no previous state loading
+- Initializes empty state for new trading session
+- Waits for `StartTime` before beginning pattern checks
 
 ### 2. Timeframe-Based Signal Checking
 
@@ -39,8 +40,11 @@ At each check:
 1. Fetches historical OHLC data
 2. Filters out the current/forming candle
 3. Examines the **previous 2 completed candles**
-4. Checks for signal patterns
-5. Prints OHLC of the 2 candles being checked
+   - **Example**: At 9:30, checks 9:25 (most recent) and 9:20 (previous)
+4. Stores candle information (color, timestamp, OHLC) for dashboard
+5. Checks for signal patterns
+6. Prints OHLC of the 2 candles being checked
+7. Logs FIRST CANDLE color when pattern checking begins
 
 ### 3. Signal Detection Logic
 
@@ -130,7 +134,22 @@ Where SCH = Signal Candle Low
 
 - **Targets**: Partial exits based on `Tgt1Lots`, `Tgt2Lots`, `Tgt3Lots`, `Tgt4Lots`
 - **Stop Losses**: Exit **ALL remaining lots** when any SL is hit
+- **Initial Stop Loss**: Calculated from signal candle (SCL for BUY, SCH for SELL) using same formula as entry
 - **One Trade Per Day**: Once a signal is detected or entry is taken, no new signals are checked for that symbol on the same day
+- **StopTime Closing**: All open positions are automatically closed at `StopTime` (intraday orders only)
+
+### 7. Entry/Exit Monitoring
+
+The strategy continuously monitors:
+- **Entry Monitoring**: Checks if LTP has reached entry price
+  - BUY: Enters when LTP >= Entry Price
+  - SELL: Enters when LTP <= Entry Price
+- **Exit Monitoring**: Monitors LTP against targets and stop losses
+  - State machine progression: `in_position` → `t1_hit` → `t2_hit` → `t3_hit` → `t4_hit`
+  - Each target hit reduces remaining lots
+  - Any stop loss hit closes all remaining lots
+- **StopTime Check**: At StopTime, all open positions are squared off
+- **All Orders**: All orders are placed as **INTRADAY** product type
 
 ---
 
@@ -188,15 +207,50 @@ Where SCH = Signal Candle Low
 
 ### Function: `main_strategy()`
 
-**Purpose**: Main execution loop that orchestrates signal detection
+**Purpose**: Main execution loop that orchestrates signal detection and entry/exit monitoring
 
 **Process**:
 1. Updates LTP data from WebSocket
 2. Loops through each symbol in `result_dict`
 3. Checks if it's time to run signal check (timeframe-based)
-4. Calls `check_signal_for_symbol()` when time matches
+4. Calls `check_signal_for_symbol()` when time matches (only during trading hours)
 5. Updates `next_check_time` for next interval
-6. Saves state after each check
+6. Monitors entry/exit for all symbols (runs every second)
+7. Prints dashboard every 5 seconds
+8. Saves state after each check
+
+### Function: `monitor_entry_exit()`
+
+**Purpose**: Monitors entry and exit conditions using real-time LTP
+
+**Process**:
+1. Checks if position exists and hasn't exited today
+2. Validates trading hours
+3. **Entry Logic**:
+   - BUY: Enters when LTP >= Entry Price
+   - SELL: Enters when LTP <= Entry Price
+   - Places order with INTRADAY product type
+   - Recalculates levels with actual entry price
+4. **Exit Logic**:
+   - Monitors LTP against Initial SL, T1-T4, and SL1-SL4
+   - State machine: `in_position` → `t1_hit` → `t2_hit` → `t3_hit` → `t4_hit`
+   - Partial exits at targets, full exit at stop losses
+5. **StopTime Check**: Closes all positions when StopTime is reached
+
+### Function: `print_dashboard()`
+
+**Purpose**: Displays real-time trading dashboard
+
+**Shows**:
+- Symbol name
+- Current status (NO SIGNAL, WAITING ENTRY, IN POSITION, EXITED TODAY)
+- Entry status (YES/NO)
+- LTP (Last Traded Price)
+- Candle 1 (Recent) - timestamp and color (GREEN/RED)
+- Candle 2 (Previous) - timestamp and color (GREEN/RED)
+- P&L for active positions
+
+**Updates**: Every 5 seconds with screen clear for readability
 
 ---
 
@@ -223,7 +277,9 @@ Where SCH = Signal Candle Low
 | T4Percent | Target 4 percentage | 16 |
 | StartTime | Trading start time (HH:MM) | 13:15 |
 | StopTime | Trading stop time (HH:MM) | 15:30 |
-| Market | Market type: IO or UL | IO |
+| Market | Market type: IO (Index Options) or UL (Underlying) | IO |
+
+**Note**: `ProductType` column is optional. If not present, defaults to 'intraday'. All orders are placed as INTRADAY regardless of this setting.
 
 ### Example Configuration
 
@@ -272,19 +328,27 @@ The strategy maintains state in `state.json` with the following structure:
 - `signal_detected`: Boolean indicating if signal was found
 - `direction`: 'BUY' or 'SELL'
 - `SCH`: Signal Candle High/Low value
+- `SCL`: Signal Candle Low/High value (opposite of SCH based on direction)
 - `Entry`: Calculated entry price
+- `InitialSL`: Initial stop loss calculated from signal candle
 - `T1` to `T4`: Target levels
 - `SL1` to `SL4`: Stop loss levels
 - `entry_taken`: Boolean indicating if entry order was placed
-- `position_state`: Current position state (waiting_entry, in_position, etc.)
+- `entry_price`: Actual entry price when order was placed
+- `position_state`: Current position state (waiting_entry, in_position, t1_hit, t2_hit, t3_hit, t4_hit, etc.)
 - `remaining_lots`: Number of lots still in position
 - `exited_today`: Boolean indicating if position was exited today
+- `market_type`: Market type (IO or UL)
+- `last_candle_1`: Most recent completed candle info (timestamp, color, OHLC)
+- `last_candle_2`: Previous completed candle info (timestamp, color, OHLC)
+- `first_candle_logged`: Boolean to track if first candle was logged
 
-### Daily Reset Logic
+### State Management Logic
 
-- On new trading day, state is reset for fresh pattern checks
-- One trade per day per symbol is enforced
-- Previous day's exited positions are cleared
+- **Fresh Start**: Strategy starts fresh every time - no previous state is loaded
+- **One Trade Per Day**: Once a signal is detected or entry is taken, no new signals are checked for that symbol
+- **State Persistence**: State is saved to `state.json` after each signal detection and entry/exit action
+- **Daily Reset**: State is cleared when script restarts (fresh start approach)
 
 ---
 
@@ -310,19 +374,43 @@ project/
 
 ### Console Output
 
+- Project startup information
+- Settings loaded for each symbol
 - Signal detection messages
 - OHLC of candles being checked
 - Entry price and level calculations
+- Order placement confirmations
+- Entry/exit events
+- Real-time dashboard (updates every 5 seconds)
 - Error messages and tracebacks
 
 ### OrderLog.txt
 
 Comprehensive logging includes:
-- Signal detection timestamps
-- Signal candle details (OHLC)
-- Entry price calculations
-- All target and stop-loss levels
-- Trading activity
+
+**Startup Logs**:
+- `[PROJECT START]` with timestamp
+- `[STARTUP]` with initialization details
+- All loaded symbols with their settings (ProductType, Timeframe, StartTime, StopTime)
+- State initialization message
+
+**Signal Detection Logs**:
+- `[FIRST CANDLE]` - Color, Date, OHLC of first candle checked
+- `[SIGNAL DETECTED]` with timestamp
+- Signal Candle High (SCH)
+- Signal Candle Low (SCL)
+- Entry Price
+- Initial Stop Loss
+- Target 1-4 with their respective SLs and exit lots
+- Entry Lot Size
+- Last 2 candles OHLC with volume
+
+**Trading Activity Logs**:
+- `[BUY ORDER]` / `[SELL ORDER]` with details
+- `[ENTRY PRICE REACHED]` when entry is taken
+- `[T1 HIT]`, `[T2 HIT]`, etc. for target hits
+- `[EXIT - SL1]`, `[EXIT - SL2]`, etc. for stop loss hits
+- `[SQUARE OFF - StopTime]` when positions are closed at StopTime
 
 **Format**: `[YYYY-MM-DD HH:MM:SS] Message`
 
@@ -334,10 +422,16 @@ Comprehensive logging includes:
 2. **Timeframe-Based Execution**: Checks run at regular intervals based on timeframe
 3. **Pattern Recognition**: Detects specific candlestick patterns for buy/sell signals
 4. **Market Type Support**: Different entry calculations for IO (Index Options) and UL (Underlying)
-5. **State Persistence**: Maintains state across sessions via `state.json`
-6. **Comprehensive Logging**: Detailed logs in console and `OrderLog.txt`
-7. **Real-Time Data**: Uses WebSocket for live LTP updates
-8. **Historical Data Storage**: Saves OHLC data to CSV files in `data/` folder
+5. **Fresh Start**: Starts fresh every time - no previous state loading
+6. **Real-Time Dashboard**: Live dashboard showing symbol status, entry status, and last 2 candle colors
+7. **Comprehensive Logging**: Detailed logs in console and `OrderLog.txt`
+8. **Real-Time Data**: Uses WebSocket for live LTP updates
+9. **Historical Data Storage**: Saves OHLC data to CSV files in `data/` folder
+10. **Entry/Exit Monitoring**: Continuous monitoring of LTP vs Entry price and Targets/SLs
+11. **Automatic Order Placement**: Places orders automatically when conditions are met
+12. **StopTime Closing**: Automatically closes all positions at StopTime
+13. **Intraday Orders**: All orders are placed as INTRADAY product type
+14. **Initial Stop Loss**: Calculates initial SL from signal candle using same formula as entry
 
 ---
 
@@ -347,30 +441,51 @@ Comprehensive logging includes:
 1. Initialize
    ├── Load credentials
    ├── Load TradeSettings.csv
-   ├── Load state.json
+   ├── Initialize fresh state (no previous state loading)
    └── Initialize WebSocket
 
 2. Main Loop (runs every 1 second)
-   ├── Update LTP data
-   └── For each symbol:
-       ├── Check if time to run (timeframe-based)
-       ├── If yes:
-       │   ├── Fetch OHLC data
-       │   ├── Check signal patterns
-       │   ├── If signal found:
-       │   │   ├── Calculate entry price
-       │   │   ├── Calculate levels
-       │   │   ├── Store state
-       │   │   └── Log details
-       │   └── Update next_check_time
-       └── Save state
-
-3. Entry/Exit Monitoring (Future Phase)
-   ├── Monitor LTP vs Entry price
-   ├── Place entry order when price reached
-   ├── Monitor LTP vs Targets/SLs
-   └── Place exit orders when levels hit
+   ├── Update LTP data from WebSocket
+   ├── For each symbol:
+   │   ├── Check if time to run (timeframe-based, starting from StartTime)
+   │   ├── If yes and within trading hours:
+   │   │   ├── Fetch OHLC data
+   │   │   ├── Filter completed candles
+   │   │   ├── Get last 2 completed candles
+   │   │   ├── Store candle info for dashboard
+   │   │   ├── Check signal patterns
+   │   │   ├── If signal found:
+   │   │   │   ├── Calculate entry price
+   │   │   │   ├── Calculate initial SL
+   │   │   │   ├── Calculate all levels
+   │   │   │   ├── Store state
+   │   │   │   └── Log comprehensive details
+   │   │   └── Update next_check_time
+   │   └── Save state
+   │
+   ├── For each symbol (Entry/Exit Monitoring):
+   │   ├── Check if signal detected
+   │   ├── Monitor entry: LTP vs Entry price
+   │   ├── If entry triggered:
+   │   │   ├── Place order (INTRADAY)
+   │   │   ├── Recalculate levels with actual entry
+   │   │   └── Update state
+   │   ├── Monitor exits: LTP vs Targets/SLs
+   │   ├── If target hit: Partial exit
+   │   ├── If SL hit: Exit all remaining lots
+   │   └── Check StopTime: Close all positions if reached
+   │
+   └── Print dashboard (every 5 seconds)
 ```
+
+### Dashboard Display
+
+The dashboard shows real-time status:
+- Symbol name and current status
+- Entry taken (YES/NO)
+- LTP (Last Traded Price)
+- Last 2 completed candles with timestamps and colors (GREEN/RED)
+- P&L for active positions
 
 ---
 
@@ -416,7 +531,29 @@ T3 = EP × (1 - T3Percent/100)
 T4 = EP × (1 - T4Percent/100)
 ```
 
-### Stop Loss Calculations
+### Initial Stop Loss Calculation
+
+**IO (Index Options) - BUY:**
+```
+InitialSL = SCL - (√(SCL) × 0.2611)
+```
+
+**IO (Index Options) - SELL:**
+```
+InitialSL = SCH + (√(SCH) × 0.2611)
+```
+
+**UL (Underlying) - BUY:**
+```
+InitialSL = SCL - (SCL^(1/3) × 0.2611)
+```
+
+**UL (Underlying) - SELL:**
+```
+InitialSL = SCH + (SCH^(1/3) × 0.2611)
+```
+
+### Stop Loss Calculations (After Entry)
 
 **BUY:**
 ```
@@ -441,19 +578,37 @@ SL4 = T3 + SL4Points
 - The strategy only checks for signals during trading hours (StartTime to StopTime)
 - Only completed candles are analyzed (forming candles are excluded)
 - Historical OHLC data is saved to CSV files for reference
-- State is automatically saved after each signal detection
+- State is automatically saved after each signal detection and entry/exit action
 - The strategy enforces one trade per day per symbol
-- Entry/Exit monitoring logic will be implemented in the next phase
+- **Fresh Start**: No previous state is loaded - starts fresh every time script runs
+- **All Orders**: All orders are placed as INTRADAY product type
+- **StopTime Enforcement**: All positions are automatically closed at StopTime
+- **Dashboard Updates**: Real-time dashboard refreshes every 5 seconds
+- **Candle Storage**: Last 2 completed candles are stored for dashboard display
 
----
+## Trading Dashboard
 
-## Future Enhancements
+The strategy includes a real-time dashboard that displays:
 
-1. **Entry/Exit Monitoring**: Real-time monitoring of LTP vs Entry price and Targets/SLs
-2. **Order Placement**: Automatic order placement when conditions are met
-3. **Position Management**: Track and manage open positions
-4. **Risk Management**: Additional risk controls and validations
-5. **Performance Analytics**: Track win rate, profit/loss, etc.
+```
+========================================================================================================================
+TRADING DASHBOARD - 2025-12-26 18:04:30
+========================================================================================================================
+
+Symbol                    Status                      Entry    LTP        Candle 1 (Recent)                    Candle 2 (Previous)                  
+------------------------------------------------------------------------------------------------------------------------
+NIFTY25DEC26200CE         NO SIGNAL                   NO       20.35      13:25:00 (GREEN)                     13:24:00 (RED)                       
+NIFTY25DEC26200PE         WAITING ENTRY (BUY) @ 162.19 NO      158.50     13:16:00 (GREEN)                     13:15:00 (RED)                       
+NIFTY25DEC26250PE         IN POSITION (BUY) - 225L     YES     205.50     13:22:00 (GREEN)                     13:21:00 (RED)                       
+...
+```
+
+**Dashboard Features**:
+- Updates every 5 seconds
+- Clears screen before each update
+- Shows all symbols from TradeSettings.csv
+- Displays real-time status and P&L
+- Shows last 2 candle colors and timestamps
 
 ---
 
